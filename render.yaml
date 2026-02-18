@@ -2,21 +2,15 @@ services:
   - type: web
     name: elibrary
     env: php
-    buildCommand: |
-      # Install dependencies if needed
-      composer install --no-dev --optimize-autoloader 2>/dev/null || true
+    buildCommand: echo "No build needed"
     startCommand: |
-      # Copy environment configuration
       cp .env.example .env 2>/dev/null || true
-      # Start Apache with PHP
       apache2-foreground
     envVars:
       - key: PHP_VERSION
-        value: 8.2
+        value: "8.2"
       - key: APP_ENV
         value: production
-      - key: SITE_URL
-        value: https://your-app-name.onrender.com
 
   - type: pserv
     name: mysql
