@@ -2,20 +2,20 @@
 // Database Configuration for E-Library System
 // San Roque Elementary School
 
-// Database credentials
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'elibrary_db');
+// Database credentials - use environment variables for production
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') ?: '');
+define('DB_NAME', getenv('DB_NAME') ?: 'elibrary_db');
 
 // Site configuration
-define('SITE_NAME', 'San Roque Elementary School E-Library');
-define('SITE_URL', 'http://localhost/elibrary');
+define('SITE_NAME', getenv('SITE_NAME') ?: 'San Roque Elementary School E-Library');
+define('SITE_URL', getenv('SITE_URL') ?: 'http://localhost/elibrary');
 
 // File upload settings
-define('UPLOAD_PATH', '../uploads/');
-define('BOOKS_PATH', '../uploads/books/');
-define('COVERS_PATH', '../uploads/covers/');
+define('UPLOAD_PATH', __DIR__ . '/../uploads/');
+define('BOOKS_PATH', __DIR__ . '/../uploads/books/');
+define('COVERS_PATH', __DIR__ . '/../uploads/covers/');
 define('MAX_FILE_SIZE', 50 * 1024 * 1024); // 50MB
 
 // Create database connection
