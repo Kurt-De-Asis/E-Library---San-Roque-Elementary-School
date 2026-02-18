@@ -1,0 +1,23 @@
+{
+    "name": "San Roque E-Library",
+    "short_name": "E-Library",
+    "description": "San Roque Elementary School E-Library for students and teachers",
+    "start_url": "/e-library/web/index.php",
+    "display": "standalone",
+    "background_color": "#4A90E2",
+    "theme_color": "#4A90E2",
+    "orientation": "any",
+    "icons": [
+        {
+            "src": "assets/logos/school-logo.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "assets/logos/school-logo.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ],
+    "categories": ["education", "books"]
+}

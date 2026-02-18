@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "E-Library Mobile",
+    "slug": "elibrary-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.elibrary.mobile"
+    },
+    "android": {
+      "package": "com.elibrary.mobile"
+    },
+    "web": {},
+    "extra": {
+      "eas": {
+        "projectId": "69c3019b-849d-4251-a2a6-cb786c7f4fd8"
+      }
+    }
+  }
+}
