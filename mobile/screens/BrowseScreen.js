@@ -12,8 +12,7 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8080/e-library/web/api';
+import { API_BASE_URL, COVERS_URL } from '../config/api';
 
 export default function BrowseScreen({ navigation }) {
   const [books, setBooks] = useState([]);
@@ -74,7 +73,7 @@ export default function BrowseScreen({ navigation }) {
     >
       <Image
         source={{
-          uri: `http://localhost:8080/e-library/web/uploads/covers/${item.cover_image}` ||
+          uri: `${COVERS_URL}/${item.cover_image}` ||
                'https://via.placeholder.com/120x160/cccccc/666666?text=No+Cover'
         }}
         style={styles.bookCover}

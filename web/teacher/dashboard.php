@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once '../api/config.php';
 if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'teacher') {
     header('Location: ../index.php');
     exit;
@@ -12,7 +12,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'teacher') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#4A90E2">
     <title>Teacher Dashboard - San Roque Elementary School E-Library</title>
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/png" href="../assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="shortcut icon" href="../assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="stylesheet" href="../css/style.css?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="teacher-dashboard">
@@ -442,12 +444,13 @@ if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'teacher') {
                 return;
             }
 
+            const DEFAULT_BOOK_COVER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='120' viewBox='0 0 100 120'%3E%3Crect width='100' height='120' fill='%23e8f5e9'/%3E%3Cpath d='M20 20h60v80H20z' fill='%23c8e6c9'/%3E%3Ctext x='50' y='65' font-family='Arial' font-size='12' fill='%232e7d32' text-anchor='middle'%3ENo Cover%3C/text%3E%3C/svg%3E";
             uploads.forEach(upload => {
                 const row = document.createElement('tr');
 
                 const coverUrl = upload.cover_image ?
                     `../uploads/covers/${upload.cover_image}` :
-                    '../assets/images/default-book.png';
+                    DEFAULT_BOOK_COVER;
 
                 const gradeText = upload.grade_level === 'all' ? 'All Grades' :
                     upload.grade_level.charAt(0).toUpperCase() + upload.grade_level.slice(1);
@@ -458,7 +461,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'teacher') {
                 const uploadDate = new Date(upload.created_at).toLocaleDateString();
 
                 row.innerHTML = `
-                    <td><img src="${coverUrl}" alt="${upload.title}" class="table-cover" onerror="this.src='../assets/images/default-book.png'"></td>
+                    <td><img src="${coverUrl}" alt="${upload.title}" class="table-cover" onerror="this.src='${DEFAULT_BOOK_COVER}'"></td>
                     <td>${upload.title}</td>
                     <td>${upload.subject || 'N/A'}</td>
                     <td>${gradeText}</td>

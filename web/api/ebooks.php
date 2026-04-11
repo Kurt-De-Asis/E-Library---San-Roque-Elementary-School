@@ -54,6 +54,9 @@ switch ($action) {
     case 'download_book':
         downloadBook($conn);
         break;
+    case 'get_sections':
+        getSections($conn);
+        break;
     case 'upload_book':
         uploadBook($conn);
         break;
@@ -63,9 +66,9 @@ switch ($action) {
 
 function getFeaturedBooks($conn) {
     try {
-        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image FROM ebooks WHERE is_featured = 1 AND is_active = 1";
+        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image, content_type FROM ebooks WHERE is_featured = 1 AND is_active = 1";
         
-        // Filter by grade level for students
+        // Filter by visibility rules
         $sql .= getGradeLevelFilter();
         
         $sql .= " ORDER BY created_at DESC LIMIT 8";
@@ -89,9 +92,9 @@ function getFeaturedBooks($conn) {
 
 function getRecentBooks($conn) {
     try {
-        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image FROM ebooks WHERE is_active = 1";
+        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image, content_type FROM ebooks WHERE is_active = 1";
         
-        // Filter by grade level for students
+        // Filter by visibility rules
         $sql .= getGradeLevelFilter();
         
         $sql .= " ORDER BY created_at DESC LIMIT 8";
@@ -115,9 +118,9 @@ function getRecentBooks($conn) {
 
 function getAllBooks($conn) {
     try {
-        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image FROM ebooks WHERE is_active = 1";
+        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image, content_type FROM ebooks WHERE is_active = 1";
         
-        // Filter by grade level for students
+        // Filter by visibility rules
         $sql .= getGradeLevelFilter();
         
         $sql .= " ORDER BY title ASC";
@@ -184,7 +187,7 @@ function getMyBooks($conn) {
         
         // Get books with reading progress for this user
         $stmt = $conn->prepare("
-            SELECT e.ebook_id, e.title, e.author, e.category, e.grade_level, e.cover_image,
+            SELECT e.ebook_id, e.title, e.author, e.category, e.grade_level, e.cover_image, e.content_type,
                    rp.progress_percentage as progress,
                    rp.current_page,
                    rp.last_accessed as last_read
@@ -251,12 +254,14 @@ function searchBooks($conn) {
         $search_term = "%$query%";
         
         // Simple search query - only searches title, author, category
-        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image 
+        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image, content_type 
                 FROM ebooks 
                 WHERE (title LIKE ? OR author LIKE ? OR category LIKE ?) 
-                AND is_active = 1 
-                ORDER BY title ASC
-                LIMIT 50";
+                AND is_active = 1 ";
+        
+        $sql .= getGradeLevelFilter();
+        
+        $sql .= " ORDER BY title ASC LIMIT 50";
         
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("sss", $search_term, $search_term, $search_term);
@@ -279,14 +284,14 @@ function searchBooks($conn) {
 
 function getFilteredBooks($conn) {
     $subject = isset($_GET['subject']) ? sanitizeInput($_GET['subject']) : '';
-    $content_type = isset($_GET['content_type']) ? sanitizeInput($_GET['content_type']) : '';
+    $content_type_filter = isset($_GET['content_type']) ? sanitizeInput($_GET['content_type']) : '';
     
     try {
-        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image FROM ebooks WHERE is_active = 1";
+        $sql = "SELECT ebook_id, title, author, category, grade_level, cover_image, content_type FROM ebooks WHERE is_active = 1";
         $params = [];
         $types = "";
         
-        // Filter by grade level for students
+        // Filter by visibility rules
         $sql .= getGradeLevelFilter();
         
         if (!empty($subject)) {
@@ -295,9 +300,9 @@ function getFilteredBooks($conn) {
             $types .= "s";
         }
         
-        if (!empty($content_type)) {
+        if (!empty($content_type_filter)) {
             $sql .= " AND content_type = ?";
-            $params[] = $content_type;
+            $params[] = $content_type_filter;
             $types .= "s";
         }
         
@@ -514,6 +519,12 @@ function downloadBook($conn) {
                 $content_type = 'application/pdf';
             } elseif ($ext === 'epub') {
                 $content_type = 'application/epub+zip';
+            } elseif (in_array($ext, ['ppt', 'pptx'])) {
+                $content_type = 'application/vnd.ms-powerpoint';
+            } elseif ($ext === 'mp4') {
+                $content_type = 'video/mp4';
+            } elseif ($ext === 'webm') {
+                $content_type = 'video/webm';
             }
 
             // Create download filename
@@ -558,77 +569,185 @@ function downloadBook($conn) {
 }
 
 function uploadBook($conn) {
-    // Check if user is logged in and is a teacher
-    if (!isLoggedIn() || $_SESSION['user_type'] !== 'teacher') {
-        echo json_encode(['success' => false, 'message' => 'Unauthorized access']);
-        return;
+    // Prevent any stray output from breaking JSON
+    ob_start();
+    
+    // Limits are primarily handled by .user.ini for FastCGI
+    // but we set them here as a secondary measure for some environments
+    @ini_set('max_execution_time', '1200');
+    @ini_set('max_input_time', '1200');
+    @ini_set('memory_limit', '1024M');
+    @set_time_limit(1200);
+
+    try {
+        // Check if user is logged in and is a teacher
+        if (!isLoggedIn() || $_SESSION['user_type'] !== 'teacher') {
+            throw new Exception('Unauthorized access');
+        }
+
+        // Detect if upload was too large for PHP settings
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && isset($_SERVER['CONTENT_LENGTH']) && $_SERVER['CONTENT_LENGTH'] > 0) {
+            $max_post = ini_get('post_max_size');
+            throw new Exception("The file is too large for the server (Server Post Limit: $max_post).");
+        }
+
+        $title = sanitizeInput($_POST['title'] ?? '');
+        $author = sanitizeInput($_POST['author'] ?? '');
+        $description = sanitizeInput($_POST['description'] ?? '');
+        $category = sanitizeInput($_POST['category'] ?? '');
+        $subject = sanitizeInput($_POST['subject'] ?? '');
+        $grade_level = sanitizeInput($_POST['grade_level'] ?? 'all');
+        $content_type = sanitizeInput($_POST['content_type'] ?? 'book');
+        $section_id = intval($_POST['section_id'] ?? 0);
+
+        if (empty($title)) {
+            throw new Exception('Title is required');
+        }
+
+        // Check for upload errors
+        if (!isset($_FILES['book_file'])) {
+            throw new Exception('No file was received by the server.');
+        }
+
+        if ($_FILES['book_file']['error'] !== UPLOAD_ERR_OK) {
+            throw new Exception('File upload error: ' . getUploadErrorMessage($_FILES['book_file']['error']));
+        }
+
+        // Check file size
+        if ($_FILES['book_file']['size'] > MAX_FILE_SIZE) {
+            throw new Exception('File size exceeds system limit (' . formatFileSize(MAX_FILE_SIZE) . ')');
+        }
+
+        // Ensure directories exist
+        if (!file_exists(UPLOAD_ROOT)) {
+            mkdir(UPLOAD_ROOT, 0777, true);
+        }
+        
+        foreach ([BOOKS_PATH, COVERS_PATH] as $path) {
+            if (!file_exists($path)) {
+                if (!mkdir($path, 0777, true)) {
+                    throw new Exception("Failed to create storage directory: " . basename($path));
+                }
+            }
+        }
+
+        // Handle cover image upload
+        $cover_image = '';
+        if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
+            if ($_FILES['cover_image']['size'] <= 10 * 1024 * 1024) { // 10MB limit for covers
+                $cover_image = generateUniqueFileName($_FILES['cover_image']['name']);
+                if (!move_uploaded_file($_FILES['cover_image']['tmp_name'], COVERS_PATH . $cover_image)) {
+                    $cover_image = ''; // Non-fatal if cover fails
+                }
+            }
+        }
+
+        // Handle main file upload
+        $file_name = $_FILES['book_file']['name'];
+        $unique_file_path = generateUniqueFileName($file_name);
+        $full_dest_path = BOOKS_PATH . $unique_file_path;
+
+        if (!move_uploaded_file($_FILES['book_file']['tmp_name'], $full_dest_path)) {
+            $error = error_get_last();
+            $msg = isset($error['message']) ? ": " . $error['message'] : ". Please check folder permissions in WAMP.";
+            throw new Exception('Failed to save the file to server storage' . $msg);
+        }
+
+        // Prepare database insert
+        $uploaded_by = $_SESSION['user_id'];
+        $section_id_value = $section_id > 0 ? $section_id : null;
+        
+        $sql = "INSERT INTO ebooks (title, author, description, category, subject, grade_level, section_id, content_type, cover_image, file_path, uploaded_by, is_approved, is_active) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)";
+        
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            throw new Exception('Database preparation failed: ' . $conn->error);
+        }
+
+        $stmt->bind_param("ssssssisssi", 
+            $title, $author, $description, $category, $subject, $grade_level, 
+            $section_id_value, $content_type, $cover_image, $unique_file_path, $uploaded_by
+        );
+
+        if (!$stmt->execute()) {
+            throw new Exception('Failed to save material information to database: ' . $stmt->error);
+        }
+
+        $stmt->close();
+        
+        // Success! Clear buffer and send response
+        ob_end_clean();
+        $type_display = ($content_type === 'video') ? 'Video' : (($content_type === 'lesson') ? 'Lesson Plan' : 'Book');
+        echo json_encode(['success' => true, 'message' => $type_display . ' uploaded successfully and is now available']);
+
+    } catch (Exception $e) {
+        ob_end_clean();
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
-
-    $title = sanitizeInput($_POST['title'] ?? '');
-    $author = sanitizeInput($_POST['author'] ?? '');
-    $description = sanitizeInput($_POST['description'] ?? '');
-    $category = sanitizeInput($_POST['category'] ?? '');
-    $subject = sanitizeInput($_POST['subject'] ?? '');
-    $grade_level = sanitizeInput($_POST['grade_level'] ?? 'all');
-    $content_type = sanitizeInput($_POST['content_type'] ?? 'book');
-    $section_id = intval($_POST['section_id'] ?? 0);
-
-    if (empty($title)) {
-        echo json_encode(['success' => false, 'message' => 'Title is required']);
-        return;
-    }
-
-    // Handle file uploads
-    $cover_image = '';
-    $file_path = '';
-
-    // Cover image upload
-    if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
-        $cover_image = generateUniqueFileName($_FILES['cover_image']['name']);
-        move_uploaded_file($_FILES['cover_image']['tmp_name'], COVERS_PATH . $cover_image);
-    }
-
-    // Book file upload
-    if (isset($_FILES['book_file']) && $_FILES['book_file']['error'] === UPLOAD_ERR_OK) {
-        $file_path = generateUniqueFileName($_FILES['book_file']['name']);
-        move_uploaded_file($_FILES['book_file']['tmp_name'], BOOKS_PATH . $file_path);
-    }
-
-    $stmt = $conn->prepare("INSERT INTO ebooks (title, author, description, category, subject, grade_level, section_id, content_type, cover_image, file_path, uploaded_by, is_approved, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)");
-    $uploaded_by = $_SESSION['user_id'];
-    $section_id_value = $section_id > 0 ? $section_id : null;
-    $stmt->bind_param("sssssissssi", $title, $author, $description, $category, $subject, $grade_level, $section_id_value, $content_type, $cover_image, $file_path, $uploaded_by);
-
-    if ($stmt->execute()) {
-        echo json_encode(['success' => true, 'message' => 'Book uploaded successfully and is pending approval']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Failed to upload book']);
-    }
-
-    $stmt->close();
 }
 
-// Get grade level filter SQL for students
+function getUploadErrorMessage($err_code) {
+    switch ($err_code) {
+        case UPLOAD_ERR_INI_SIZE:
+            return 'The uploaded file exceeds the upload_max_filesize directive in php.ini';
+        case UPLOAD_ERR_FORM_SIZE:
+            return 'The uploaded file exceeds the MAX_FILE_SIZE directive that was specified in the HTML form';
+        case UPLOAD_ERR_PARTIAL:
+            return 'The uploaded file was only partially uploaded';
+        case UPLOAD_ERR_NO_FILE:
+            return 'No file was uploaded';
+        case UPLOAD_ERR_NO_TMP_DIR:
+            return 'Missing a temporary folder';
+        case UPLOAD_ERR_CANT_WRITE:
+            return 'Failed to write file to disk';
+        case UPLOAD_ERR_EXTENSION:
+            return 'A PHP extension stopped the file upload';
+        default:
+            return 'Unknown upload error';
+    }
+}
+
+
+// Get visibility filter SQL based on user type and grade/section
 function getGradeLevelFilter() {
-    // Only filter for students
     if (!isLoggedIn()) {
+        return " AND is_active = 1 AND is_approved = 1";
+    }
+    
+    $user_id = $_SESSION['user_id'];
+    $user_type = $_SESSION['user_type'];
+    $grade_level = $_SESSION['grade_level'] ?? 'n/a';
+    $section_id = $_SESSION['section_id'] ?? null;
+    
+    // Admin can see everything
+    if ($user_type === 'admin') {
         return "";
     }
     
-    $user_type = isset($_SESSION['user_type']) ? $_SESSION['user_type'] : '';
-    $grade_level = isset($_SESSION['grade_level']) ? $_SESSION['grade_level'] : '';
-    
-    // Teachers and admins can see all books
-    if ($user_type === 'teacher' || $user_type === 'admin') {
-        return "";
+    // Teachers only see their own uploads
+    if ($user_type === 'teacher') {
+        return " AND uploaded_by = " . intval($user_id);
     }
     
-    // Students can only see books for their grade level or 'all' grades
-    if ($user_type === 'student' && !empty($grade_level) && $grade_level !== 'n/a') {
-        return " AND (grade_level = '" . addslashes($grade_level) . "' OR grade_level = 'all')";
+    // Students and Parents
+    $filter = " AND is_active = 1 AND is_approved = 1";
+    
+    // Filter by grade level
+    if (!empty($grade_level) && $grade_level !== 'n/a') {
+        $filter .= " AND (grade_level = '" . addslashes($grade_level) . "' OR grade_level = 'all')";
     }
     
-    return "";
+    // Filter by section
+    if (!empty($section_id)) {
+        // Show material if it's for their section OR if it's for the whole grade (section_id IS NULL)
+        $filter .= " AND (section_id = " . intval($section_id) . " OR section_id IS NULL)";
+    } else {
+        // If student has no section, they only see grade-wide materials
+        $filter .= " AND section_id IS NULL";
+    }
+    
+    return $filter;
 }
 
 function getCategoryIcon($category) {
@@ -642,9 +761,40 @@ function getCategoryIcon($category) {
         'Reading' => 'fas fa-book-open',
         'Writing' => 'fas fa-pen',
         'Grammar' => 'fas fa-language',
-        'Literature' => 'fas fa-scroll'
+        'Literature' => 'fas fa-scroll',
+        'lesson' => 'fas fa-file-powerpoint',
+        'video' => 'fas fa-video',
+        'module' => 'fas fa-file-alt'
     ];
     
     return isset($icons[$category]) ? $icons[$category] : 'fas fa-book';
+}
+
+function getSections($conn) {
+    // Convert to lowercase and remove spaces to match database format
+    $grade_level = isset($_GET['grade_level']) ? strtolower(str_replace(' ', '', $_GET['grade_level'])) : '';
+    
+    if (empty($grade_level)) {
+        // Return all sections if no grade level specified
+        $sql = "SELECT section_id, section_name, grade_level FROM sections WHERE is_active = 1 ORDER BY grade_level ASC, section_name ASC";
+        $result = $conn->query($sql);
+    } else {
+        // Return sections for specific grade level
+        $stmt = $conn->prepare("SELECT section_id, section_name FROM sections WHERE grade_level = ? AND is_active = 1 ORDER BY section_name ASC");
+        $stmt->bind_param("s", $grade_level);
+        $stmt->execute();
+        $result = $stmt->get_result();
+    }
+    
+    $sections = [];
+    while ($row = $result->fetch_assoc()) {
+        $sections[] = $row;
+    }
+    
+    echo json_encode(['success' => true, 'sections' => $sections]);
+    
+    if (isset($stmt)) {
+        $stmt->close();
+    }
 }
 ?>

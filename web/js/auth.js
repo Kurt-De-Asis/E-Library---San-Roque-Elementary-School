@@ -36,6 +36,10 @@ function initializeLoginPage() {
     const userTypeSelect = document.getElementById('reg-user-type');
     if (userTypeSelect) {
         userTypeSelect.addEventListener('change', toggleGradeLevel);
+        // Load sections if student is already selected on page load
+        if (userTypeSelect.value === 'student') {
+            loadSections();
+        }
     }
 
     // Grade level change for section loading
@@ -81,6 +85,10 @@ async function handleLogin(e) {
             body: formData
         });
 
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+
         const result = await response.json();
 
         if (result.success) {
@@ -105,6 +113,7 @@ async function handleLogin(e) {
 // Handle registration
 async function handleRegister(e) {
     e.preventDefault();
+    e.stopPropagation();
 
     const formData = new FormData(e.target);
     const submitButton = e.target.querySelector('button[type="submit"]');
@@ -112,9 +121,15 @@ async function handleRegister(e) {
 
     // Validate passwords
     const password = formData.get('password');
-    if (password.length < 6) {
+    if (!password || password.length < 6) {
         showMessage(messageDiv, 'Password must be at least 6 characters long.', 'error');
         return;
+    }
+
+    // Handle section - convert "none" to empty
+    const sectionSelect = document.getElementById('reg-section');
+    if (sectionSelect && sectionSelect.value === 'none') {
+        formData.set('section_id', '');
     }
 
     // Show loading
@@ -126,9 +141,13 @@ async function handleRegister(e) {
             method: 'POST',
             body: formData
         });
-
+        
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        
         const result = await response.json();
-
+        
         if (result.success) {
             showMessage(messageDiv, result.message, 'success');
 
@@ -153,47 +172,65 @@ function toggleGradeLevel() {
     const userType = document.getElementById('reg-user-type').value;
     const gradeLevelGroup = document.getElementById('grade-level-group');
     const sectionGroup = document.getElementById('section-group');
+    const gradeLevelLabel = gradeLevelGroup ? gradeLevelGroup.querySelector('label') : null;
+    const sectionLabel = sectionGroup ? sectionGroup.querySelector('label') : null;
 
-    if (userType === 'student') {
-        gradeLevelGroup.style.display = 'block';
+    if (userType === 'student' || userType === 'parent') {
+        if (gradeLevelGroup) gradeLevelGroup.style.display = 'block';
         if (sectionGroup) sectionGroup.style.display = 'block';
+        
+        if (userType === 'parent') {
+            if (gradeLevelLabel) gradeLevelLabel.innerHTML = '<i class="fas fa-graduation-cap"></i> Child\'s Grade Level';
+            if (sectionLabel) sectionLabel.innerHTML = '<i class="fas fa-chalkboard"></i> Child\'s Section (Optional)';
+        } else {
+            if (gradeLevelLabel) gradeLevelLabel.innerHTML = '<i class="fas fa-graduation-cap"></i> Grade Level';
+            if (sectionLabel) sectionLabel.innerHTML = '<i class="fas fa-chalkboard"></i> Section (Optional)';
+        }
+        
+        loadSections();
     } else {
-        gradeLevelGroup.style.display = 'none';
+        if (gradeLevelGroup) gradeLevelGroup.style.display = 'none';
         if (sectionGroup) sectionGroup.style.display = 'none';
     }
 }
 
 // Load sections based on selected grade level
 async function loadSections() {
-    const gradeLevel = document.getElementById('reg-grade-level').value;
+    const gradeLevelSelect = document.getElementById('reg-grade-level');
     const sectionSelect = document.getElementById('reg-section');
 
-    if (!sectionSelect || !gradeLevel) {
+    if (!sectionSelect) {
+        return;
+    }
+
+    const gradeLevel = gradeLevelSelect ? gradeLevelSelect.value : '';
+    
+    if (!gradeLevel) {
+        sectionSelect.innerHTML = '<option value="none">No Section</option>';
         return;
     }
 
     // Reset section select
-    sectionSelect.innerHTML = '<option value="">Loading sections...</option>';
+    sectionSelect.innerHTML = '<option value="none">Loading sections...</option>';
 
     try {
-        const response = await fetch(`api/admin.php?action=get_sections_by_grade&grade_level=${gradeLevel}`);
+        // Use public ebooks.php API (no auth required)
+        const response = await fetch(`api/ebooks.php?action=get_sections&grade_level=${encodeURIComponent(gradeLevel)}`);
         const result = await response.json();
 
-        sectionSelect.innerHTML = '<option value="">Select Section</option>';
+        sectionSelect.innerHTML = '<option value="none">No Section</option>';
 
-        if (result.success && result.sections.length > 0) {
+        if (result.success && result.sections && result.sections.length > 0) {
             result.sections.forEach(section => {
                 const option = document.createElement('option');
                 option.value = section.section_id;
                 option.textContent = section.section_name;
                 sectionSelect.appendChild(option);
             });
-        } else {
-            sectionSelect.innerHTML = '<option value="">No sections available</option>';
         }
     } catch (error) {
         console.error('Error loading sections:', error);
-        sectionSelect.innerHTML = '<option value="">Error loading sections</option>';
+        sectionSelect.innerHTML = '<option value="none">No Section</option>';
     }
 }
 

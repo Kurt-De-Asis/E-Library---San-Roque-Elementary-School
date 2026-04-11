@@ -4,8 +4,8 @@
     "description": "San Roque Elementary School E-Library for students and teachers",
     "start_url": "/e-library/web/index.php",
     "display": "standalone",
-    "background_color": "#4A90E2",
-    "theme_color": "#4A90E2",
+    "background_color": "#228B22",
+    "theme_color": "#228B22",
     "orientation": "any",
     "icons": [
         {

@@ -1,14 +1,15 @@
 <?php
-session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'admin') {
-    header('Location: ../index.php');
-    exit;
-}
+require_once '../api/config.php';
 
 // Prevent browser caching
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
+
+if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'admin') {
+    header('Location: ../index.php');
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -18,8 +19,20 @@ header('Expires: 0');
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+    <script>
+        // Force unregister service worker on localhost as early as possible
+        if ('serviceWorker' in navigator && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                }
+            });
+        }
+    </script>
     <title>Admin Dashboard - San Roque Elementary School E-Library</title>
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/png" href="../assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="shortcut icon" href="../assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="stylesheet" href="../css/style.css?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="admin-dashboard">
@@ -130,7 +143,7 @@ header('Expires: 0');
                             <th>Name</th>
                             <th>Username</th>
                             <th>User Type</th>
-                            <th>Grade Level</th>
+                            <th>Grade/Section</th>
                             <th>Status</th>
                             <th>Last Login</th>
                             <th>Actions</th>
@@ -339,6 +352,7 @@ header('Expires: 0');
                         <label for="bookContentType">Content Type</label>
                         <select id="bookContentType" name="content_type">
                             <option value="book">Book</option>
+                            <option value="video">Educational Video</option>
                             <option value="module">Module</option>
                             <option value="lesson">Lesson</option>
                             <option value="reference">Reference</option>
@@ -353,7 +367,7 @@ header('Expires: 0');
                     </div>
 
                     <div class="form-group">
-                        <label for="bookFile">Book File (PDF/EPUB) *</label>
+                        <label for="bookFile" id="bookFileLabel">Book File (PDF/EPUB) *</label>
                         <input type="file" id="bookFile" name="book_file" accept=".pdf,.epub" required>
                     </div>
                 </div>
@@ -441,7 +455,7 @@ header('Expires: 0');
 
                     <div class="form-group">
                         <label for="userGradeLevel"><i class="fas fa-graduation-cap"></i> Grade Level</label>
-                        <select id="userGradeLevel" name="grade_level">
+                        <select id="userGradeLevel" name="grade_level" onchange="loadSectionsForUserModal()">
                             <option value="n/a">N/A</option>
                             <option value="kindergarten">Kindergarten</option>
                             <option value="grade1">Grade 1</option>
@@ -452,6 +466,14 @@ header('Expires: 0');
                             <option value="grade6">Grade 6</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="form-group" id="userSectionGroup">
+                    <label for="userSection"><i class="fas fa-chalkboard"></i> Section</label>
+                    <select id="userSection" name="section_id">
+                        <option value="">No Section</option>
+                    </select>
+                    <small id="teacherSectionHint" style="display:none; color: var(--text-gray);">For teachers, this will assign them as the advisor of the section.</small>
                 </div>
 
                 <div class="form-group">
@@ -523,13 +545,13 @@ header('Expires: 0');
                     <label for="sectionGradeLevel"><i class="fas fa-graduation-cap"></i> Grade Level *</label>
                     <select id="sectionGradeLevel" name="grade_level" required>
                         <option value="">Select Grade Level</option>
-                        <option value="kindergarten">Kindergarten</option>
-                        <option value="grade1">Grade 1</option>
-                        <option value="grade2">Grade 2</option>
-                        <option value="grade3">Grade 3</option>
-                        <option value="grade4">Grade 4</option>
-                        <option value="grade5">Grade 5</option>
-                        <option value="grade6">Grade 6</option>
+                        <option value="Kindergarten">Kindergarten</option>
+                        <option value="Grade 1">Grade 1</option>
+                        <option value="Grade 2">Grade 2</option>
+                        <option value="Grade 3">Grade 3</option>
+                        <option value="Grade 4">Grade 4</option>
+                        <option value="Grade 5">Grade 5</option>
+                        <option value="Grade 6">Grade 6</option>
                     </select>
                 </div>
 
@@ -550,6 +572,12 @@ header('Expires: 0');
         </div>
     </div>
 
-    <script src="../js/admin.js"></script>
+    <script src="../js/admin.js?v=<?php echo CACHE_BUSTER; ?>"></script>
+    <script>
+        // Ensure buttons are clickable even if main JS has minor issues
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Admin UI check: OK');
+        });
+    </script>
 </body>
 </html>

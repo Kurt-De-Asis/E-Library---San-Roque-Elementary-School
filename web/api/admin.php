@@ -1,7 +1,7 @@
 <?php
 // Enable error reporting for debugging
 error_reporting(E_ALL);
-ini_set('display_errors', 0); // Don't display errors in output
+ini_set('display_errors', 1); // Temporarily enable display_errors for debugging
 ini_set('log_errors', 1);
 ini_set('error_log', '../logs/php_errors.log');
 
@@ -149,7 +149,14 @@ function getUsers() {
         return;
     }
 
-    $result = $conn->query("SELECT user_id, username, email, full_name, user_type, grade_level, is_active, last_login, created_at FROM users ORDER BY created_at DESC");
+    $sql = "SELECT u.user_id, u.username, u.email, u.full_name, u.user_type, u.grade_level, u.is_active, u.last_login, u.created_at, 
+            s.section_name as student_section_name,
+            (SELECT GROUP_CONCAT(section_name SEPARATOR ', ') FROM sections WHERE teacher_id = u.user_id) as handles_sections
+            FROM users u
+            LEFT JOIN sections s ON u.section_id = s.section_id
+            ORDER BY u.created_at DESC";
+    
+    $result = $conn->query($sql);
     $users = [];
     
     while ($row = $result->fetch_assoc()) {
@@ -203,8 +210,8 @@ function getReports() {
         $reports['total_users'] = 0;
     }
 
-    // Total downloads (from reading_history or use 0 if table doesn't exist)
-    $result = $conn->query("SELECT COUNT(*) as count FROM reading_history WHERE action = 'download'");
+    // Total downloads
+    $result = $conn->query("SELECT COUNT(*) as count FROM activity_logs WHERE action = 'download'");
     if ($result) {
         $reports['total_downloads'] = $result->fetch_assoc()['count'];
     } else {
@@ -212,9 +219,9 @@ function getReports() {
     }
 
     // Total views
-    $result = $conn->query("SELECT COUNT(*) as count FROM reading_history WHERE action = 'view'");
+    $result = $conn->query("SELECT COUNT(*) as count FROM activity_logs WHERE action = 'view' OR action = 'read'");
     if ($result) {
-        $reports['total_views'] = $result ? $result->fetch_assoc()['count'] : 0;
+        $reports['total_views'] = $result->fetch_assoc()['count'];
     } else {
         $reports['total_views'] = 0;
     }
@@ -279,9 +286,11 @@ function addBook() {
         move_uploaded_file($_FILES['book_file']['tmp_name'], BOOKS_PATH . $file_path);
     }
 
-    $stmt = $conn->prepare("INSERT INTO ebooks (title, author, description, category, subject, grade_level, content_type, cover_image, file_path, uploaded_by, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)");
+    $stmt = $conn->prepare("INSERT INTO ebooks (title, author, description, category, subject, grade_level, content_type, cover_image, file_path, uploaded_by, is_approved, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)");
     $uploaded_by = $_SESSION['user_id'];
-    $stmt->bind_param("sssssssssi", $title, $author, $description, $category, $subject, $grade_level, $content_type, $cover_image, $file_path, $uploaded_by);
+    $section_id = intval($_POST['section_id'] ?? 0);
+    $section_id_val = $section_id > 0 ? $section_id : null;
+    $stmt->bind_param("sssssssssii", $title, $author, $description, $category, $subject, $grade_level, $content_type, $cover_image, $file_path, $uploaded_by, $section_id_val);
     
     if ($stmt->execute()) {
         echo json_encode(['success' => true, 'message' => 'Book added successfully']);
@@ -334,7 +343,9 @@ function updateSection() {
 
     $section_id = intval($data['section_id'] ?? 0);
     $section_name = sanitizeInput($data['section_name'] ?? '');
+    // Normalize grade level format
     $grade_level = sanitizeInput($data['grade_level'] ?? '');
+    $grade_level = strtolower(str_replace(' ', '', $grade_level));
     $teacher_id = intval($data['teacher_id'] ?? 0);
 
     if (empty($section_id) || empty($section_name) || empty($grade_level)) {
@@ -443,49 +454,81 @@ function getTeachers() {
 }
 
 function addSection() {
-    $conn = getDBConnection();
-    if (!$conn) {
-        echo json_encode(['success' => false, 'message' => 'Database connection failed']);
-        return;
-    }
+    try {
+        $conn = getDBConnection();
+        if (!$conn) {
+            echo json_encode(['success' => false, 'message' => 'Database connection failed']);
+            return;
+        }
 
-    $data = json_decode(file_get_contents('php://input'), true);
+        $raw_input = file_get_contents('php://input');
+        $data = json_decode($raw_input, true);
+        
+        if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+            echo json_encode(['success' => false, 'message' => 'Invalid JSON input']);
+            $conn->close();
+            return;
+        }
 
-    $section_name = sanitizeInput($data['section_name'] ?? '');
-    $grade_level = sanitizeInput($data['grade_level'] ?? '');
-    $teacher_id = intval($data['teacher_id'] ?? 0);
+        $section_name = sanitizeInput($data['section_name'] ?? '');
+        // Normalize grade level format
+        $grade_level = sanitizeInput($data['grade_level'] ?? '');
+        $grade_level = strtolower(str_replace(' ', '', $grade_level));
+        $teacher_id = isset($data['teacher_id']) ? intval($data['teacher_id']) : 0;
 
-    if (empty($section_name) || empty($grade_level)) {
-        echo json_encode(['success' => false, 'message' => 'Section name and grade level are required']);
-        return;
-    }
+        if (empty($section_name) || empty($grade_level)) {
+            echo json_encode(['success' => false, 'message' => 'Section name and grade level are required']);
+            $conn->close();
+            return;
+        }
 
-    // Check if section already exists for this grade level
-    $checkStmt = $conn->prepare("SELECT section_id FROM sections WHERE section_name = ? AND grade_level = ?");
-    $checkStmt->bind_param("ss", $section_name, $grade_level);
-    $checkStmt->execute();
-    $checkResult = $checkStmt->get_result();
+        // Check if section already exists for this grade level
+        $checkStmt = $conn->prepare("SELECT section_id FROM sections WHERE section_name = ? AND grade_level = ?");
+        if (!$checkStmt) {
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
+            $conn->close();
+            return;
+        }
+        $checkStmt->bind_param("ss", $section_name, $grade_level);
+        $checkStmt->execute();
+        $checkResult = $checkStmt->get_result();
 
-    if ($checkResult->num_rows > 0) {
-        echo json_encode(['success' => false, 'message' => 'Section already exists for this grade level']);
+        if ($checkResult->num_rows > 0) {
+            echo json_encode(['success' => false, 'message' => 'Section already exists for this grade level']);
+            $checkStmt->close();
+            $conn->close();
+            return;
+        }
         $checkStmt->close();
+
+        $stmt = $conn->prepare("INSERT INTO sections (section_name, grade_level, teacher_id, is_active) VALUES (?, ?, ?, 1)");
+        
+        if (!$stmt) {
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
+            $conn->close();
+            return;
+        }
+        
+        if ($teacher_id > 0) {
+            $stmt->bind_param("ssi", $section_name, $grade_level, $teacher_id);
+        } else {
+            $null_val = null;
+            $stmt->bind_param("ssi", $section_name, $grade_level, $null_val);
+        }
+
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'message' => 'Section created successfully']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Failed to create section: ' . $stmt->error]);
+        }
+
+        $stmt->close();
         $conn->close();
-        return;
+        
+    } catch (Exception $e) {
+        error_log("Add section error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage()]);
     }
-    $checkStmt->close();
-
-    $stmt = $conn->prepare("INSERT INTO sections (section_name, grade_level, teacher_id, is_active) VALUES (?, ?, ?, 1)");
-    $teacher_id_value = $teacher_id > 0 ? $teacher_id : null;
-    $stmt->bind_param("sssi", $section_name, $grade_level, $teacher_id_value, 1);
-
-    if ($stmt->execute()) {
-        echo json_encode(['success' => true, 'message' => 'Section created successfully']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Failed to create section: ' . $stmt->error . ' | Data: ' . json_encode($data)]);
-    }
-
-    $stmt->close();
-    $conn->close();
 }
 
 function deleteSection() {
@@ -550,8 +593,37 @@ function updateBook() {
         return;
     }
 
-    $stmt = $conn->prepare("UPDATE ebooks SET title = ?, author = ?, description = ?, category = ?, subject = ?, grade_level = ?, content_type = ? WHERE ebook_id = ?");
-    $stmt->bind_param("sssssssi", $title, $author, $description, $category, $subject, $grade_level, $content_type, $book_id);
+    // Handle optional file updates
+    $updateFields = "title = ?, author = ?, description = ?, category = ?, subject = ?, grade_level = ?, content_type = ?";
+    $params = [$title, $author, $description, $category, $subject, $grade_level, $content_type];
+    $types = "sssssss";
+
+    // Update cover image if provided
+    if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
+        $cover_image = generateUniqueFileName($_FILES['cover_image']['name']);
+        if (move_uploaded_file($_FILES['cover_image']['tmp_name'], COVERS_PATH . $cover_image)) {
+            $updateFields .= ", cover_image = ?";
+            $params[] = $cover_image;
+            $types .= "s";
+        }
+    }
+
+    // Update book file if provided
+    if (isset($_FILES['book_file']) && $_FILES['book_file']['error'] === UPLOAD_ERR_OK) {
+        $file_path = generateUniqueFileName($_FILES['book_file']['name']);
+        if (move_uploaded_file($_FILES['book_file']['tmp_name'], BOOKS_PATH . $file_path)) {
+            $updateFields .= ", file_path = ?";
+            $params[] = $file_path;
+            $types .= "s";
+        }
+    }
+
+    $sql = "UPDATE ebooks SET $updateFields WHERE ebook_id = ?";
+    $params[] = $book_id;
+    $types .= "i";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
     
     if ($stmt->execute()) {
         echo json_encode(['success' => true, 'message' => 'Book updated successfully']);
@@ -803,13 +875,26 @@ function getUser() {
         return;
     }
 
-    $stmt = $conn->prepare("SELECT user_id, username, email, full_name, user_type, grade_level, is_active FROM users WHERE user_id = ?");
+    $stmt = $conn->prepare("SELECT user_id, username, email, full_name, user_type, grade_level, is_active, section_id FROM users WHERE user_id = ?");
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($result->num_rows === 1) {
         $user = $result->fetch_assoc();
+        
+        // If user is teacher, get the section they handle
+        if ($user['user_type'] === 'teacher') {
+            $teacherStmt = $conn->prepare("SELECT section_id FROM sections WHERE teacher_id = ? LIMIT 1");
+            $teacherStmt->bind_param("i", $user_id);
+            $teacherStmt->execute();
+            $teacherResult = $teacherStmt->get_result();
+            if ($teacherResult->num_rows === 1) {
+                $user['section_id'] = $teacherResult->fetch_assoc()['section_id'];
+            }
+            $teacherStmt->close();
+        }
+        
         echo json_encode(['success' => true, 'user' => $user]);
     } else {
         echo json_encode(['success' => false, 'message' => 'User not found']);
@@ -834,6 +919,7 @@ function updateUser() {
     $username = sanitizeInput($data['username'] ?? '');
     $user_type = sanitizeInput($data['user_type'] ?? '');
     $grade_level = sanitizeInput($data['grade_level'] ?? '');
+    $section_id = isset($data['section_id']) ? intval($data['section_id']) : null;
     $password = $data['password'] ?? '';
 
     if (empty($user_id) || empty($full_name) || empty($email) || empty($username) || empty($user_type)) {
@@ -861,36 +947,68 @@ function updateUser() {
     }
     $checkStmt->close();
 
-    // Build update query
-    $updateFields = "full_name = ?, email = ?, username = ?, user_type = ?, grade_level = ?";
-    $params = [$full_name, $email, $username, $user_type, $grade_level];
-    $types = "sssss";
+    // Start transaction
+    $conn->begin_transaction();
 
-    // Add password if provided
-    if (!empty($password)) {
-        if (strlen($password) < 6) {
-            echo json_encode(['success' => false, 'message' => 'Password must be at least 6 characters']);
-            return;
+    try {
+        // Build update query
+        $updateFields = "full_name = ?, email = ?, username = ?, user_type = ?, grade_level = ?";
+        $params = [$full_name, $email, $username, $user_type, $grade_level];
+        $types = "sssss";
+
+        // Add section_id if student or parent
+        if ($user_type === 'student' || $user_type === 'parent') {
+            $updateFields .= ", section_id = ?";
+            $params[] = $section_id > 0 ? $section_id : null;
+            $types .= "i";
         }
-        $password_hash = password_hash($password, PASSWORD_DEFAULT);
-        $updateFields .= ", password_hash = ?";
-        $params[] = $password_hash;
-        $types .= "s";
-    }
 
-    $params[] = $user_id;
-    $types .= "i";
+        // Add password if provided
+        if (!empty($password)) {
+            if (strlen($password) < 6) {
+                throw new Exception('Password must be at least 6 characters');
+            }
+            $password_hash = password_hash($password, PASSWORD_DEFAULT);
+            $updateFields .= ", password_hash = ?";
+            $params[] = $password_hash;
+            $types .= "s";
+        }
 
-    $stmt = $conn->prepare("UPDATE users SET {$updateFields} WHERE user_id = ?");
-    $stmt->bind_param($types, ...$params);
+        $params[] = $user_id;
+        $types .= "i";
 
-    if ($stmt->execute()) {
+        $stmt = $conn->prepare("UPDATE users SET {$updateFields} WHERE user_id = ?");
+        $stmt->bind_param($types, ...$params);
+
+        if (!$stmt->execute()) {
+            throw new Exception('Failed to update user table');
+        }
+        $stmt->close();
+
+        // Handle section assignment for teachers
+        if ($user_type === 'teacher') {
+            // First, unassign this teacher from all sections
+            $unassignStmt = $conn->prepare("UPDATE sections SET teacher_id = NULL WHERE teacher_id = ?");
+            $unassignStmt->bind_param("i", $user_id);
+            $unassignStmt->execute();
+            $unassignStmt->close();
+
+            // Then, assign to the new section if provided
+            if ($section_id > 0) {
+                $assignStmt = $conn->prepare("UPDATE sections SET teacher_id = ? WHERE section_id = ?");
+                $assignStmt->bind_param("ii", $user_id, $section_id);
+                $assignStmt->execute();
+                $assignStmt->close();
+            }
+        }
+
+        $conn->commit();
         echo json_encode(['success' => true, 'message' => 'User updated successfully']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Failed to update user']);
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 
-    $stmt->close();
     $conn->close();
 }
 ?>
