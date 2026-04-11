@@ -1,5 +1,11 @@
 <?php
-session_start();
+require_once 'api/config.php';
+
+// Prevent browser caching
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
@@ -10,10 +16,15 @@ if (!isset($_SESSION['user_id'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="theme-color" content="#4A90E2">
     <title>E-Book Reader - San Roque Elementary School E-Library</title>
     <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="shortcut icon" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- PDF.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -47,53 +58,14 @@ if (!isset($_SESSION['user_id'])) {
         </div>
     </header>
 
-    <!-- Reader Toolbar -->
-    <div class="reader-toolbar">
-        <div class="toolbar-container">
-            <div class="toolbar-left">
-                <button onclick="prevPage()" id="prevBtn" class="btn btn-icon" disabled>
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-                <span class="page-info">
-                    Page <input type="number" id="currentPageInput" min="1" value="1" onchange="goToPage(this.value)">
-                    of <span id="totalPages">0</span>
-                </span>
-                <button onclick="nextPage()" id="nextBtn" class="btn btn-icon">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            </div>
-
-            <div class="toolbar-center">
-                <div class="zoom-controls">
-                    <button onclick="zoomOut()" class="btn btn-icon">
-                        <i class="fas fa-search-minus"></i>
-                    </button>
-                    <select id="zoomSelect" onchange="setZoom(this.value)">
-                        <option value="0.5">50%</option>
-                        <option value="0.75">75%</option>
-                        <option value="1" selected>100%</option>
-                        <option value="1.25">125%</option>
-                        <option value="1.5">150%</option>
-                        <option value="2">200%</option>
-                    </select>
-                    <button onclick="zoomIn()" class="btn btn-icon">
-                        <i class="fas fa-search-plus"></i>
-                    </button>
-                </div>
-            </div>
-
-            <div class="toolbar-right">
-                <button onclick="toggleBookmark()" id="bookmarkBtn" class="btn btn-icon">
-                    <i class="fas fa-bookmark"></i>
-                </button>
-                <button onclick="toggleTOC()" id="tocBtn" class="btn btn-icon">
-                    <i class="fas fa-list"></i>
-                </button>
-                <button onclick="toggleSettings()" id="settingsBtn" class="btn btn-icon">
-                    <i class="fas fa-cog"></i>
-                </button>
-            </div>
-        </div>
+    <!-- Navigation Buttons -->
+    <div id="readerNav" class="reader-navigation">
+        <button id="readerPrevBtn" class="nav-btn nav-btn-left" title="Previous Page">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <button id="readerNextBtn" class="nav-btn nav-btn-right" title="Next Page">
+            <i class="fas fa-chevron-right"></i>
+        </button>
     </div>
 
     <!-- Reader Content -->
@@ -121,6 +93,28 @@ if (!isset($_SESSION['user_id'])) {
                     <div class="loading">
                         <i class="fas fa-spinner fa-spin"></i>
                         <p>Loading EPUB reader...</p>
+                    </div>
+                </div>
+
+                <!-- Video Player (hidden by default) -->
+                <div id="videoViewer" class="video-viewer" style="display: none;">
+                    <video id="mainVideo" controls controlsList="nodownload">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+
+                <!-- PPT / Office Viewer (hidden by default) -->
+                <div id="officeViewer" class="office-viewer" style="display: none;">
+                    <div id="officeContent" class="office-content">
+                        <div class="unsupported-viewer">
+                            <i class="fas fa-file-powerpoint" style="font-size: 5rem; color: #d24726; margin-bottom: 1rem;"></i>
+                            <h3>Presentation Loaded</h3>
+                            <p>This file format is best viewed by downloading and opening with Microsoft PowerPoint.</p>
+                            <button onclick="downloadBook()" class="btn btn-primary" style="margin-top: 1rem;">
+                                <i class="fas fa-download"></i> Download to View
+                            </button>
+                        </div>
+                        <iframe id="officeIframe" src="" width="100%" height="600px" frameborder="0" style="display: none;"></iframe>
                     </div>
                 </div>
             </div>
@@ -200,11 +194,11 @@ if (!isset($_SESSION['user_id'])) {
         </div>
     </div>
 
-    <script src="js/reader.js"></script>
+    <script src="js/reader.js?v=<?php echo CACHE_BUSTER; ?>"></script>
     <script>
         // Register Service Worker for offline support
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
+            navigator.serviceWorker.register('sw.js?v=<?php echo APP_VERSION; ?>')
                 .then(registration => {
                     console.log('Service Worker registered');
                 })

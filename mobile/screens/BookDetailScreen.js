@@ -11,8 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8080/e-library/web/api';
+import { API_BASE_URL, COVERS_URL } from '../config/api';
 
 export default function BookDetailScreen({ route, navigation }) {
   const { book } = route.params;
@@ -68,7 +67,7 @@ export default function BookDetailScreen({ route, navigation }) {
         <View style={styles.bookHeader}>
           <Image
             source={{
-              uri: `http://localhost:8080/e-library/web/uploads/covers/${displayBook.cover_image}` ||
+              uri: `${COVERS_URL}/${displayBook.cover_image}` ||
                    'https://via.placeholder.com/200x300/cccccc/666666?text=No+Cover'
             }}
             style={styles.bookCover}

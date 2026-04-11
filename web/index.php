@@ -1,5 +1,11 @@
 <?php
-session_start();
+require_once 'api/config.php';
+
+// Prevent browser caching
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
@@ -10,12 +16,27 @@ if (!isset($_SESSION['user_id'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#4A90E2">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <script>
+        // Force unregister service worker on localhost as early as possible
+        if ('serviceWorker' in navigator && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                }
+            });
+        }
+    </script>
+    <meta name="theme-color" content="#228B22">
     <meta name="description" content="San Roque Elementary School E-Library - Digital reading platform for students">
     <title>San Roque Elementary School E-Library</title>
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="assets/logos/school-logo.png">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="shortcut icon" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-icon" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
@@ -60,11 +81,10 @@ if (!isset($_SESSION['user_id'])) {
                 <i class="fas fa-upload"></i> Upload
             </button>
             <button class="nav-item" id="adminNav" style="display: none;" onclick="location.href='admin/dashboard.php?t=' + Date.now()">
-                <i class="fas fa-cog"></i> Admin Panel
+				<i class="fas fa-cog"></i> Admin Panel
             </button>
         </div>
     </nav>
-
     <!-- Main Content -->
     <main class="main-content">
         <!-- Home Section -->
@@ -78,8 +98,7 @@ if (!isset($_SESSION['user_id'])) {
             <div class="search-container">
                 <div class="search-box">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="searchInput" placeholder="Search for books, authors, or subjects..." autocomplete="off">
-                    <button onclick="searchBooks()" class="btn btn-primary">Search</button>
+                    <input type="text" id="searchInput" placeholder="Search for books, authors, or subjects..." autocomplete="off">                    <button onclick="searchBooks()" class="btn btn-primary">Search</button>
                     <div id="searchSuggestions" class="search-suggestions"></div>
                 </div>
             </div>
@@ -127,12 +146,24 @@ if (!isset($_SESSION['user_id'])) {
             <div id="allBooks" class="books-grid">
                 <div class="loading">Loading books...</div>
             </div>
+            <div class="pagination" id="booksPagination">
+                <button id="prevPageBtn" onclick="changePage(-1)" class="btn btn-icon" disabled>
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <span id="pageInfo">Page 1</span>
+                <button id="nextPageBtn" onclick="changePage(1)" class="btn btn-icon">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
         </section>
 
         <!-- Categories Section -->
         <section id="categories-section" class="content-section">
             <div class="section-header">
-                <h2><i class="fas fa-th"></i> Browse by Category</h2>
+                <h2 id="categorySectionTitle"><i class="fas fa-th"></i> Browse by Category</h2>
+                <button id="btnBackToTypes" class="btn btn-secondary" style="display: none;" onclick="renderCategoryTypes()">
+                    <i class="fas fa-arrow-left"></i> Back to Types
+                </button>
             </div>
             <div id="categoriesGrid" class="categories-grid">
                 <div class="loading">Loading categories...</div>
@@ -153,7 +184,7 @@ if (!isset($_SESSION['user_id'])) {
     <!-- Footer -->
     <footer class="main-footer">
         <div class="footer-content">
-            <p>&copy; 2025 San Roque Elementary School - E-Library System</p>
+            <p>&copy; 2026 San Roque Elementary School - E-Library System</p>
             <p>Department of Education - Division of San Pedro, Laguna</p>
         </div>
     </footer>
@@ -166,22 +197,43 @@ if (!isset($_SESSION['user_id'])) {
         </div>
     </div>
 
-    <script src="js/main.js"></script>
+    <script src="js/main.js?v=<?php echo CACHE_BUSTER; ?>"></script>
     <script>
         // Register Service Worker for offline support
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js')
+                <?php if (IS_LOCALHOST): ?>
+                // Unregister any existing service workers on localhost to avoid "Everything is Loading" issues
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    for (let registration of registrations) {
+                        registration.unregister();
+                        console.log('Service Worker unregistered on localhost');
+                    }
+                });
+                <?php else: ?>
+                navigator.serviceWorker.register('sw.js?v=<?php echo APP_VERSION; ?>')
                     .then(registration => {
                         console.log('Service Worker registered:', registration.scope);
+                        
+                        // Check for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // New content available, reload page
+                                    if (confirm('New version available! Refresh to update?')) {
+                                        window.location.reload();
+                                    }
+                                }
+                            });
+                        });
                     })
                     .catch(error => {
                         console.log('Service Worker registration failed:', error);
                     });
+                <?php endif; ?>
             });
         }
-        
-
     </script>
 </body>
 </html>

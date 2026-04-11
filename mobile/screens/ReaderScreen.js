@@ -8,8 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8080/e-library/web/api';
+import API_BASE_URL from '../config/api';
 
 export default function ReaderScreen({ route, navigation }) {
   const { book } = route.params;

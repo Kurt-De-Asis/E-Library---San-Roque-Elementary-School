@@ -12,11 +12,20 @@ define('DB_NAME', getenv('DB_NAME') ?: 'elibrary_db');
 define('SITE_NAME', getenv('SITE_NAME') ?: 'San Roque Elementary School E-Library');
 define('SITE_URL', getenv('SITE_URL') ?: 'http://localhost/elibrary');
 
+// Detect if running on localhost
+$is_localhost = ($_SERVER['REMOTE_ADDR'] === '127.0.0.1' || $_SERVER['REMOTE_ADDR'] === '::1' || $_SERVER['SERVER_NAME'] === 'localhost');
+if (!defined('IS_LOCALHOST')) define('IS_LOCALHOST', $is_localhost);
+
+// Application version
+define('APP_VERSION', '1.0.3');
+// Cache buster for development - changes every second on localhost
+define('CACHE_BUSTER', $is_localhost ? time() : APP_VERSION);
+
 // File upload settings
-define('UPLOAD_PATH', __DIR__ . '/../uploads/');
-define('BOOKS_PATH', __DIR__ . '/../uploads/books/');
-define('COVERS_PATH', __DIR__ . '/../uploads/covers/');
-define('MAX_FILE_SIZE', 50 * 1024 * 1024); // 50MB
+define('UPLOAD_ROOT', __DIR__ . '/../uploads/');
+define('BOOKS_PATH', UPLOAD_ROOT . 'books/');
+define('COVERS_PATH', UPLOAD_ROOT . 'covers/');
+define('MAX_FILE_SIZE', 500 * 1024 * 1024); // 500MB
 
 // Create database connection
 function getDBConnection() {
@@ -34,6 +43,15 @@ function getDBConnection() {
         error_log($e->getMessage());
         return null;
     }
+}
+
+// Error reporting for development
+if ($is_localhost) {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 1);
+} else {
+    error_reporting(0);
+    ini_set('display_errors', 0);
 }
 
 // Start session if not already started

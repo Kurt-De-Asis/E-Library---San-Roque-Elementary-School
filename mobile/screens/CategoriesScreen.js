@@ -9,8 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8080/e-library/web/api';
+import API_BASE_URL from '../config/api';
 
 export default function CategoriesScreen({ navigation }) {
   const [categories, setCategories] = useState([]);

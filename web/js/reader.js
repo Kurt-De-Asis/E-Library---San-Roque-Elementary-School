@@ -7,7 +7,9 @@ let currentPage = 1;
 let totalPages = 0;
 let scale = 1;
 let readingProgress = 0;
+let autoFillEnabled = false; // Auto-fill mode
 let autoSaveEnabled = true;
+let isRendering = false; // Prevent page skip due to rapid clicks
 
 // DOM Content Loaded
 document.addEventListener('DOMContentLoaded', async function() {
@@ -55,8 +57,26 @@ async function loadBook(bookId) {
         // Show loading
         showLoading('Loading book...');
 
+        // Initialize PDF.js worker FIRST before any PDF operations
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            console.log('PDF.js worker initialized');
+        } else {
+            console.warn('PDF.js library not found, will retry...');
+            // Wait a bit and try again
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (typeof pdfjsLib !== 'undefined') {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            }
+        }
+
         // Load book details
         const response = await fetch(`api/ebooks.php?action=get_book&id=${bookId}`);
+        
+        if (!response.ok) {
+            throw new Error('Failed to connect to server');
+        }
+        
         const result = await response.json();
 
         if (!result.success) {
@@ -70,18 +90,26 @@ async function loadBook(bookId) {
 
         // Determine file type from extension
         const filePath = currentBook.file_path || '';
+        
+        if (!filePath) {
+            throw new Error('No book file available for this book');
+        }
+        
         const fileExt = filePath.split('.').pop().toLowerCase();
+        console.log('Loading book file:', filePath, 'Extension:', fileExt);
 
         // Load book content
         if (fileExt === 'pdf') {
             await loadPDF('uploads/books/' + filePath);
         } else if (fileExt === 'epub') {
             await loadEPUB('uploads/books/' + filePath);
-        } else if (filePath) {
+        } else if (['mp4', 'webm', 'ogg'].includes(fileExt)) {
+            await loadVideo('uploads/books/' + filePath);
+        } else if (['ppt', 'pptx'].includes(fileExt)) {
+            await loadOffice('uploads/books/' + filePath);
+        } else {
             // Try loading as PDF by default
             await loadPDF('uploads/books/' + filePath);
-        } else {
-            throw new Error('No book file available');
         }
 
         // Load reading progress
@@ -89,15 +117,15 @@ async function loadBook(bookId) {
 
         // Load bookmarks
         await loadBookmarks();
-        
+
         // Save immediately that user opened this book (for reading history)
         await saveReadingProgress();
-
-        hideLoading();
 
     } catch (error) {
         console.error('Error loading book:', error);
         showError(error.message);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -109,7 +137,7 @@ function updateBookInfo() {
 
     if (titleElement) titleElement.textContent = currentBook.title;
     if (authorElement) authorElement.textContent = 'By: ' + (currentBook.author || 'Unknown');
-    
+
     // Hide download button if content_type is 'book', show for 'module' and 'lesson'
     if (downloadBtn) {
         const contentType = currentBook.content_type || 'book';
@@ -125,16 +153,39 @@ function updateBookInfo() {
 async function loadPDF(filePath) {
     const pdfViewer = document.getElementById('pdfViewer');
     const epubViewer = document.getElementById('epubViewer');
+    const videoViewer = document.getElementById('videoViewer');
+    const officeViewer = document.getElementById('officeViewer');
+
+    console.log('Loading PDF from:', filePath);
 
     pdfViewer.style.display = 'block';
     epubViewer.style.display = 'none';
+    videoViewer.style.display = 'none';
+    officeViewer.style.display = 'none';
 
     try {
-        // Load PDF using PDF.js
-        const loadingTask = pdfjsLib.getDocument(filePath);
-        pdfDoc = await loadingTask.promise;
+        if (typeof pdfjsLib === 'undefined') {
+            throw new Error('PDF.js library not loaded. Please refresh the page.');
+        }
+
+        // Try loading with relative path first
+        let pdfData = null;
+        
+        try {
+            const loadingTask = pdfjsLib.getDocument(filePath);
+            pdfDoc = await loadingTask.promise;
+        } catch (loadError) {
+            // If relative path fails, try with absolute path
+            console.log('Relative path failed, trying absolute path...');
+            const absolutePath = window.location.origin + '/e-library/web/' + filePath;
+            console.log('Trying absolute path:', absolutePath);
+            
+            const loadingTask = pdfjsLib.getDocument(absolutePath);
+            pdfDoc = await loadingTask.promise;
+        }
 
         totalPages = pdfDoc.numPages;
+        console.log('PDF loaded successfully, total pages:', totalPages);
 
         // Update page controls
         updatePageControls();
@@ -144,7 +195,7 @@ async function loadPDF(filePath) {
 
     } catch (error) {
         console.error('Error loading PDF:', error);
-        throw new Error('Failed to load PDF file');
+        throw new Error('Failed to load PDF file. The file may be corrupted or not accessible. Error: ' + error.message);
     }
 }
 
@@ -152,22 +203,87 @@ async function loadPDF(filePath) {
 async function loadEPUB(filePath) {
     const pdfViewer = document.getElementById('pdfViewer');
     const epubViewer = document.getElementById('epubViewer');
+    const videoViewer = document.getElementById('videoViewer');
+    const officeViewer = document.getElementById('officeViewer');
 
     pdfViewer.style.display = 'none';
+    videoViewer.style.display = 'none';
+    officeViewer.style.display = 'none';
     epubViewer.style.display = 'block';
 
-    // For now, show a message that EPUB reading is not yet implemented
     epubViewer.innerHTML = `
-        <div class="epub-placeholder">
-            <i class="fas fa-book-open fa-3x"></i>
-            <h3>EPUB Reader</h3>
-            <p>EPUB reading functionality is coming soon!</p>
-            <p>This book is available for download instead.</p>
-            <button onclick="downloadBook()" class="btn btn-primary">Download EPUB</button>
+        <div class="empty-state" style="text-align: center; padding: 3rem;">
+            <i class="fas fa-book-open" style="font-size: 4rem; color: var(--primary-blue); opacity: 0.5; margin-bottom: 1rem;"></i>
+            <h3>EPUB Viewer</h3>
+            <p>EPUB support is coming soon! You can download the file to read it on your device.</p>
+            <button onclick="downloadBook()" class="btn btn-primary" style="margin-top: 1rem;">
+                <i class="fas fa-download"></i> Download EPUB
+            </button>
         </div>
     `;
+    
+    totalPages = 1;
+    currentPage = 1;
+    updatePageControls();
+}
 
-    totalPages = 1; // Placeholder
+// Load Video content
+async function loadVideo(filePath) {
+    const pdfViewer = document.getElementById('pdfViewer');
+    const epubViewer = document.getElementById('epubViewer');
+    const videoViewer = document.getElementById('videoViewer');
+    const officeViewer = document.getElementById('officeViewer');
+    const video = document.getElementById('mainVideo');
+
+    pdfViewer.style.display = 'none';
+    epubViewer.style.display = 'none';
+    officeViewer.style.display = 'none';
+    videoViewer.style.display = 'block';
+
+    // Hide unnecessary toolbar items
+    const zoomControls = document.querySelector('.zoom-controls');
+    const pagination = document.querySelector('.reader-navigation');
+    if (zoomControls) zoomControls.style.display = 'none';
+    if (pagination) pagination.style.display = 'none';
+
+    video.src = filePath;
+    video.load();
+    
+    totalPages = 1;
+    currentPage = 1;
+    updatePageControls();
+}
+
+// Load Office (PPT) content
+async function loadOffice(filePath) {
+    const pdfViewer = document.getElementById('pdfViewer');
+    const epubViewer = document.getElementById('epubViewer');
+    const videoViewer = document.getElementById('videoViewer');
+    const officeViewer = document.getElementById('officeViewer');
+
+    pdfViewer.style.display = 'none';
+    epubViewer.style.display = 'none';
+    videoViewer.style.display = 'none';
+    officeViewer.style.display = 'block';
+
+    // We can try to use Google Docs Viewer for PPTs if they are publicly accessible
+    // For local development, we show the download fallback
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const iframe = document.getElementById('officeIframe');
+    const unsupported = document.querySelector('.unsupported-viewer');
+
+    if (!isLocal) {
+        const fullUrl = window.location.origin + '/e-library/web/' + filePath;
+        iframe.src = `https://docs.google.com/viewer?url=${encodeURIComponent(fullUrl)}&embedded=true`;
+        iframe.style.display = 'block';
+        if (unsupported) unsupported.style.display = 'none';
+    } else {
+        if (iframe) iframe.style.display = 'none';
+        if (unsupported) unsupported.style.display = 'block';
+    }
+    
+    totalPages = 1;
+    currentPage = 1;
     updatePageControls();
 }
 
@@ -175,6 +291,24 @@ async function loadEPUB(filePath) {
 async function renderPage(pageNum) {
     try {
         const page = await pdfDoc.getPage(pageNum);
+        
+        // Auto-fit scale on first render if scale is 1
+        if (pageNum === currentPage && scale === 1) {
+            const readingArea = document.querySelector('.reading-area');
+            const containerWidth = readingArea ? readingArea.clientWidth : 0;
+            const viewport1 = page.getViewport({ scale: 1 });
+            
+            if (containerWidth > 0 && viewport1.width > 0) {
+                scale = (containerWidth - 80) / viewport1.width;
+            } else {
+                scale = 1;
+            }
+            
+            if (scale > 2) scale = 2; // Maximum scale
+            if (scale < 0.2) scale = 0.2; // Minimum scale
+            updateZoomControls();
+        }
+
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
 
@@ -210,37 +344,59 @@ function updatePageControls() {
     const totalPagesElement = document.getElementById('totalPages');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
+    const readerPrevBtn = document.getElementById('readerPrevBtn');
+    const readerNextBtn = document.getElementById('readerNextBtn');
 
     if (currentPageInput) currentPageInput.value = currentPage;
     if (totalPagesElement) totalPagesElement.textContent = totalPages;
 
     if (prevBtn) prevBtn.disabled = currentPage <= 1;
     if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+    if (readerPrevBtn) readerPrevBtn.disabled = currentPage <= 1;
+    if (readerNextBtn) readerNextBtn.disabled = currentPage >= totalPages;
 }
 
 // Navigation functions
 function prevPage() {
+    if (isRendering) return; // Prevent rapid clicks
     if (currentPage > 1) {
+        isRendering = true;
         currentPage--;
-        renderPage(currentPage);
-        updatePageControls();
+        renderPage(currentPage).then(() => {
+            updatePageControls();
+            isRendering = false;
+        }).catch(() => {
+            isRendering = false;
+        });
     }
 }
 
 function nextPage() {
+    if (isRendering) return; // Prevent rapid clicks
     if (currentPage < totalPages) {
+        isRendering = true;
         currentPage++;
-        renderPage(currentPage);
-        updatePageControls();
+        renderPage(currentPage).then(() => {
+            updatePageControls();
+            isRendering = false;
+        }).catch(() => {
+            isRendering = false;
+        });
     }
 }
 
 function goToPage(pageNum) {
+    if (isRendering) return; // Prevent rapid clicks
     pageNum = parseInt(pageNum);
     if (pageNum >= 1 && pageNum <= totalPages) {
+        isRendering = true;
         currentPage = pageNum;
-        renderPage(currentPage);
-        updatePageControls();
+        renderPage(currentPage).then(() => {
+            updatePageControls();
+            isRendering = false;
+        }).catch(() => {
+            isRendering = false;
+        });
     }
 }
 
@@ -275,6 +431,13 @@ function initializeNavigation() {
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
     const currentPageInput = document.getElementById('currentPageInput');
+
+    // Add event listeners for navigation buttons
+    const readerPrevBtn = document.getElementById('readerPrevBtn');
+    const readerNextBtn = document.getElementById('readerNextBtn');
+
+    if (readerPrevBtn) readerPrevBtn.addEventListener('click', prevPage);
+    if (readerNextBtn) readerNextBtn.addEventListener('click', nextPage);
 
     if (prevBtn) prevBtn.addEventListener('click', prevPage);
     if (nextBtn) nextBtn.addEventListener('click', nextPage);
@@ -346,15 +509,152 @@ function handleKeyboard(e) {
 // Toggle functions
 function toggleFullscreen() {
     const readerContent = document.querySelector('.reader-content');
+    const body = document.body;
 
     if (!document.fullscreenElement) {
+        // Enter fullscreen mode
         readerContent.requestFullscreen().catch(err => {
             console.error('Error attempting to enable fullscreen:', err);
         });
+
+        // Add auto-fill class to make content fill screen
+        body.classList.add('reader-fullscreen-active');
+        readerContent.classList.add('auto-fill');
+
+        // Update button icon
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        if (fullscreenBtn) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+        }
     } else {
+        // Exit fullscreen mode
         document.exitFullscreen();
+
+        // Remove auto-fill class
+        body.classList.remove('reader-fullscreen-active');
+        readerContent.classList.remove('auto-fill');
+
+        // Update button icon
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        if (fullscreenBtn) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        }
     }
 }
+
+// Handle fullscreen change events
+document.addEventListener('fullscreenchange', () => {
+    const readerContent = document.querySelector('.reader-content');
+    const body = document.body;
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    console.log('Fullscreen change detected');
+    console.log('document.fullscreenElement:', document.fullscreenElement);
+
+    if (document.fullscreenElement) {
+        console.log('Entering fullscreen');
+        // We are in fullscreen
+        body.classList.add('reader-fullscreen-active');
+        readerContent.classList.add('auto-fill');
+        if (fullscreenBtn) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+        }
+    } else {
+        console.log('Exiting fullscreen');
+        // We are not in fullscreen
+        body.classList.remove('reader-fullscreen-active');
+        readerContent.classList.remove('auto-fill');
+        if (fullscreenBtn) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        }
+    }
+});
+
+// Check auto-fill mode
+function checkAutoFillMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoFill = urlParams.get('autoFill');
+
+    if (autoFill === 'true') {
+        enableAutoFill();
+    }
+}
+
+// Enable auto-fill mode
+function enableAutoFill() {
+    const readerContent = document.querySelector('.reader-content');
+    const body = document.body;
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    if (readerContent) {
+        body.classList.add('reader-fullscreen-active');
+        readerContent.classList.add('auto-fill');
+        autoFillEnabled = true;
+
+        // Update fullscreen button icon
+        if (fullscreenBtn) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+        }
+
+        // Request fullscreen
+        if (!document.fullscreenElement) {
+            readerContent.requestFullscreen().catch(err => {
+                console.error('Error attempting to enable fullscreen:', err);
+            });
+        }
+    }
+}
+
+// Disable auto-fill mode
+function disableAutoFill() {
+    const readerContent = document.querySelector('.reader-content');
+    const body = document.body;
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    if (readerContent) {
+        body.classList.remove('reader-fullscreen-active');
+        readerContent.classList.remove('auto-fill');
+        autoFillEnabled = false;
+
+        // Update fullscreen button icon
+        if (fullscreenBtn) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        }
+
+        // Exit fullscreen
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        }
+    }
+}
+
+// Toggle auto-fill mode
+function toggleAutoFill() {
+    if (autoFillEnabled) {
+        disableAutoFill();
+    } else {
+        enableAutoFill();
+    }
+}
+
+// Add auto-fill button to toolbar
+function addAutoFillButton() {
+    const toolbarRight = document.querySelector('.toolbar-right');
+
+    if (toolbarRight) {
+        const autoFillBtn = document.createElement('button');
+        autoFillBtn.id = 'autoFillBtn';
+        autoFillBtn.className = 'btn btn-icon';
+        autoFillBtn.title = 'Auto-fill Mode';
+        autoFillBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        autoFillBtn.onclick = toggleAutoFill;
+
+        toolbarRight.insertBefore(autoFillBtn, toolbarRight.firstChild);
+    }
+}
+
+// Add auto-fill button when DOM is loaded
+document.addEventListener('DOMContentLoaded', addAutoFillButton);
 
 function toggleBookmark() {
     const bookmarksPanel = document.getElementById('bookmarksPanel');
@@ -411,6 +711,21 @@ function closeAllPanels() {
         const btn = document.getElementById(btnId);
         if (btn) btn.classList.remove('active');
     });
+}
+
+// Toggle bookmarks panel
+function toggleBookmarks() {
+    const bookmarksPanel = document.getElementById('bookmarksPanel');
+    const bookmarkBtn = document.getElementById('bookmarkBtn');
+
+    if (bookmarksPanel.style.display === 'block') {
+        bookmarksPanel.style.display = 'none';
+        bookmarkBtn.classList.remove('active');
+    } else {
+        closeAllPanels();
+        bookmarksPanel.style.display = 'block';
+        bookmarkBtn.classList.add('active');
+    }
 }
 
 // Reading progress functions
@@ -583,7 +898,7 @@ function goBack() {
 
 async function downloadBook() {
     if (!currentBook) return;
-    
+
     // Check if download is allowed
     const contentType = currentBook.content_type || 'book';
     if (contentType === 'book') {
@@ -595,10 +910,10 @@ async function downloadBook() {
         // Get file extension from file_path
         const filePath = currentBook.file_path || '';
         const fileExt = filePath.split('.').pop().toLowerCase() || 'pdf';
-        
+
         // Use direct link for download
         const downloadUrl = `api/ebooks.php?action=download_book&id=${currentBook.ebook_id}`;
-        
+
         // Create a link and click it
         const a = document.createElement('a');
         a.href = downloadUrl;
@@ -607,7 +922,7 @@ async function downloadBook() {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        
+
         showMessage('Download started', 'success');
     } catch (error) {
         console.error('Download error:', error);
@@ -745,45 +1060,52 @@ async function saveForOffline() {
         showMessage('No book loaded', 'error');
         return;
     }
-    
+
     const offlineBtn = document.getElementById('offlineBtn');
     const filePath = currentBook.file_path || '';
-    
+
     if (!filePath) {
         showMessage('Book file not available', 'error');
         return;
     }
-    
+
     const bookUrl = window.location.origin + '/e-library/web/uploads/books/' + filePath;
-    
+
     // Check if Service Worker is available
     if (!('serviceWorker' in navigator)) {
         showMessage('Offline reading not supported in this browser', 'error');
         return;
     }
-    
+
     try {
         // Update button to show saving
         offlineBtn.disabled = true;
         offlineBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span class="offline-text">Saving...</span>';
-        
+
         // Send message to Service Worker to cache the book
         const registration = await navigator.serviceWorker.ready;
-        registration.active.postMessage({
-            action: 'cacheBook',
-            bookUrl: bookUrl,
-            bookId: currentBook.ebook_id
-        });
-        
+        if (registration.active) {
+            registration.active.postMessage({
+                action: 'cacheBook',
+                bookUrl: bookUrl,
+                bookId: currentBook.ebook_id
+            });
+        } else {
+            // Fallback if worker not active yet
+            const response = await fetch(bookUrl);
+            if (response.ok) {
+                const cache = await caches.open('elibrary-books-v1');
+                await cache.put(bookUrl, response);
+                updateOfflineButton(true);
+                showMessage('Book saved for offline reading!', 'success');
+            }
+        }
+
         // Also cache book metadata in localStorage
         saveBookMetadataOffline(currentBook);
-        
-        // Show success after a short delay (actual caching happens async)
-        setTimeout(() => {
-            updateOfflineButton(true);
-            showMessage('Book saved for offline reading!', 'success');
-        }, 1500);
-        
+
+        // Success is now handled by message listener or fallback above
+        // Remove the hardcoded setTimeout success message to avoid confusion
     } catch (error) {
         console.error('Failed to save for offline:', error);
         showMessage('Failed to save for offline', 'error');
@@ -795,9 +1117,9 @@ async function saveForOffline() {
 function updateOfflineButton(isCached) {
     const offlineBtn = document.getElementById('offlineBtn');
     if (!offlineBtn) return;
-    
+
     offlineBtn.disabled = false;
-    
+
     if (isCached) {
         offlineBtn.innerHTML = '<i class="fas fa-check-circle"></i> <span class="offline-text">Saved Offline</span>';
         offlineBtn.classList.remove('btn-success');
@@ -831,7 +1153,7 @@ function saveBookMetadataOffline(book) {
 // Check if current book is cached
 async function checkIfBookCached() {
     if (!currentBook || !currentBook.file_path) return;
-    
+
     try {
         // Check localStorage first
         const offlineBooks = JSON.parse(localStorage.getItem('offlineBooks') || '{}');
@@ -839,7 +1161,7 @@ async function checkIfBookCached() {
             updateOfflineButton(true);
             return;
         }
-        
+
         // Also check with Service Worker
         if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
             const messageChannel = new MessageChannel();
@@ -850,7 +1172,7 @@ async function checkIfBookCached() {
                     updateOfflineButton(true);
                 }
             };
-            
+
             navigator.serviceWorker.controller.postMessage(
                 { action: 'getCachedBooks' },
                 [messageChannel.port2]

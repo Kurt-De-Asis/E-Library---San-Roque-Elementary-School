@@ -1,6 +1,8 @@
 // Main JavaScript for E-Library System
 // San Roque Elementary School
 
+console.log('E-Library System initialized');
+
 // DOM Content Loaded
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('E-Library: Initializing dashboard...');
@@ -45,9 +47,10 @@ function initializeDashboard(user) {
     }
 
     if (gradeLevelInfoElement) {
-        if (user.user_type === 'student') {
+        if (user.user_type === 'student' || user.user_type === 'parent') {
+            const prefix = user.user_type === 'parent' ? "Your child's " : "";
             const gradeText = user.grade_level.charAt(0).toUpperCase() + user.grade_level.slice(1).replace(/(\d)/, ' $1');
-            gradeLevelInfoElement.textContent = `Showing books for ${gradeText} students`;
+            gradeLevelInfoElement.textContent = `Showing books for ${prefix}${gradeText} students`;
         } else {
             gradeLevelInfoElement.textContent = 'Showing all books and materials';
         }
@@ -137,6 +140,8 @@ async function loadHomeData() {
 
         if (featuredResult.success) {
             renderBooksGrid('featuredBooks', featuredResult.books);
+        } else {
+            document.getElementById('featuredBooks').innerHTML = '<div class="loading">Failed to load featured books.</div>';
         }
 
         // Load recent books
@@ -145,11 +150,16 @@ async function loadHomeData() {
 
         if (recentResult.success) {
             renderBooksGrid('recentBooks', recentResult.books);
+        } else {
+            document.getElementById('recentBooks').innerHTML = '<div class="loading">Failed to load recent books.</div>';
         }
 
     } catch (error) {
         console.error('Error loading home data:', error);
-        showMessage('Failed to load books', 'error');
+        document.querySelectorAll('.books-grid').forEach(grid => {
+            grid.innerHTML = '<div class="loading">Error connecting to server. Please refresh.</div>';
+        });
+        showMessage('Failed to load books. Please check your connection.', 'error');
     }
 }
 
@@ -160,7 +170,7 @@ async function loadBrowseData() {
         const result = await response.json();
 
         if (result.success) {
-            renderBooksGrid('allBooks', result.books);
+            setAllBooksData(result.books);
         }
     } catch (error) {
         console.error('Error loading books:', error);
@@ -168,18 +178,156 @@ async function loadBrowseData() {
     }
 }
 
+let selectedCategoryType = '';
+let allCategoriesCache = [];
+
 // Load categories data
 async function loadCategoriesData() {
     try {
-        const response = await fetch('api/ebooks.php?action=get_categories');
-        const result = await response.json();
-
-        if (result.success) {
-            renderCategoriesGrid(result.categories);
+        if (allCategoriesCache.length === 0) {
+            const response = await fetch('api/ebooks.php?action=get_categories');
+            const result = await response.json();
+            if (result.success) {
+                allCategoriesCache = result.categories;
+            }
+        }
+        
+        // Always show types first unless we are deep in a category
+        if (!selectedCategoryType) {
+            renderCategoryTypes();
+        } else {
+            renderCategoriesGrid(allCategoriesCache);
         }
     } catch (error) {
         console.error('Error loading categories:', error);
         showMessage('Failed to load categories', 'error');
+    }
+}
+
+// Render the 3 main types
+function renderCategoryTypes() {
+    const container = document.getElementById('categoriesGrid');
+    const backBtn = document.getElementById('btnBackToTypes');
+    const sectionTitle = document.getElementById('categorySectionTitle');
+    
+    if (!container) return;
+    
+    selectedCategoryType = '';
+    if (backBtn) backBtn.style.display = 'none';
+    if (sectionTitle) sectionTitle.innerHTML = '<i class="fas fa-th"></i> Browse by Material Type';
+
+    container.innerHTML = '';
+    
+    const types = [
+        { id: 'book', name: 'Books', icon: 'fas fa-book', desc: 'Read digital books and modules' },
+        { id: 'lesson', name: 'Powerpoint', icon: 'fas fa-file-powerpoint', desc: 'View educational presentations' },
+        { id: 'video', name: 'Educational Video', icon: 'fas fa-video', desc: 'Watch educational videos' }
+    ];
+
+    types.forEach(type => {
+        const card = document.createElement('div');
+        card.className = 'category-card';
+        card.onclick = () => selectCategoryType(type.id, type.name);
+        
+        card.innerHTML = `
+            <div class="category-icon">
+                <i class="${type.icon}"></i>
+            </div>
+            <h3 class="category-title">${type.name}</h3>
+            <p class="category-description">${type.desc}</p>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function selectCategoryType(typeId, typeName) {
+    selectedCategoryType = typeId;
+    const sectionTitle = document.getElementById('categorySectionTitle');
+    const backBtn = document.getElementById('btnBackToTypes');
+    
+    if (sectionTitle) sectionTitle.innerHTML = `<i class="fas fa-th"></i> ${typeName} Categories`;
+    if (backBtn) backBtn.style.display = 'block';
+    
+    renderCategoriesGrid(allCategoriesCache);
+}
+
+function renderCategoriesGrid(categories) {
+    const container = document.getElementById('categoriesGrid');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (!categories || categories.length === 0) {
+        container.innerHTML = '<div class="loading">No categories found.</div>';
+        return;
+    }
+
+    categories.forEach(category => {
+        const categoryCard = createCategoryCard(category);
+        container.appendChild(categoryCard);
+    });
+}
+
+// Create category card element
+function createCategoryCard(category) {
+    const card = document.createElement('div');
+    card.className = 'category-card';
+    card.onclick = () => browseCategory(category.category_name);
+
+    const iconClass = category.icon || 'fas fa-book';
+
+    card.innerHTML = `
+        <div class="category-icon">
+            <i class="${iconClass}"></i>
+        </div>
+        <h3 class="category-title">${category.category_name}</h3>
+        <p class="category-description">${category.description || 'Browse items in this category'}</p>
+    `;
+
+    return card;
+}
+
+// Browse category
+async function browseCategory(category) {
+    // Update navigation
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    const browseNav = document.querySelector(`[onclick="showSection('browse')"]`);
+    if (browseNav) browseNav.classList.add('active');
+
+    // Show browse section without loading all books
+    document.querySelectorAll('.content-section').forEach(section => {
+        section.classList.remove('active');
+    });
+    const browseSection = document.getElementById('browse-section');
+    if (browseSection) browseSection.classList.add('active');
+
+    // Set filters
+    const subjectFilter = document.getElementById('subjectFilter');
+    const contentTypeFilter = document.getElementById('contentTypeFilter');
+    
+    if (subjectFilter) subjectFilter.value = category;
+    if (contentTypeFilter) contentTypeFilter.value = selectedCategoryType || '';
+    
+    // Load filtered books directly
+    try {
+        let url = `api/ebooks.php?action=get_filtered&subject=${encodeURIComponent(category)}`;
+        if (selectedCategoryType) {
+            url += `&content_type=${encodeURIComponent(selectedCategoryType)}`;
+        }
+        
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (result.success) {
+            setAllBooksData(result.books);
+        } else {
+            setAllBooksData([]);
+        }
+    } catch (error) {
+        console.error('Filter error:', error);
+        showMessage('Failed to load items for this category', 'error');
     }
 }
 
@@ -233,41 +381,7 @@ function renderMyBooksGrid(containerId, books) {
     container.innerHTML = '';
 
     books.forEach(book => {
-        const card = document.createElement('div');
-        card.className = 'book-card';
-        card.onclick = () => openBook(book.ebook_id);
-
-        const coverUrl = book.cover_image ? `uploads/covers/${book.cover_image}` : 'assets/images/default-book.png';
-
-        const gradeText = book.grade_level === 'all' ? 'All Grades' :
-            book.grade_level.charAt(0).toUpperCase() + book.grade_level.slice(1).replace(/(\d)/, ' $1');
-        
-        const progress = book.progress ? Math.round(book.progress) : 0;
-        const progressBar = progress > 0 ? `
-            <div class="reading-progress-bar" style="height: 4px; background: #E1E8ED; border-radius: 2px; margin-top: 0.5rem;">
-                <div style="width: ${progress}%; height: 100%; background: linear-gradient(90deg, var(--primary-blue), var(--primary-green)); border-radius: 2px;"></div>
-            </div>
-            <small style="color: var(--text-gray);">${progress}% read</small>
-        ` : '';
-
-        card.innerHTML = `
-            <div class="book-cover">
-                <img src="${coverUrl}" alt="${book.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-                <div class="book-icon" style="display: none;">
-                    <i class="fas fa-book"></i>
-                </div>
-            </div>
-            <div class="book-info">
-                <h3 class="book-title">${book.title}</h3>
-                <p class="book-author">By: ${book.author || 'Unknown'}</p>
-                <div class="book-meta">
-                    <span class="book-category">${book.category}</span>
-                    <span class="book-grade">${gradeText}</span>
-                </div>
-                ${progressBar}
-            </div>
-        `;
-
+        const card = createBookCard(book);
         container.appendChild(card);
     });
 }
@@ -292,20 +406,53 @@ function renderBooksGrid(containerId, books) {
 
 // Create book card element
 function createBookCard(book) {
+    const DEFAULT_BOOK_COVER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='120' viewBox='0 0 100 120'%3E%3Crect width='100' height='120' fill='%23e8f5e9'/%3E%3Cpath d='M20 20h60v80H20z' fill='%23c8e6c9'/%3E%3Ctext x='50' y='65' font-family='Arial' font-size='12' fill='%232e7d32' text-anchor='middle'%3ENo Cover%3C/text%3E%3C/svg%3E";
     const card = document.createElement('div');
     card.className = 'book-card';
     card.onclick = () => openBook(book.ebook_id);
 
-    const coverUrl = book.cover_image ? `uploads/covers/${book.cover_image}` : 'assets/images/default-book.png';
+    const hasCover = !!book.cover_image && book.cover_image !== '';
+    const coverUrl = hasCover ? `uploads/covers/${book.cover_image}` : DEFAULT_BOOK_COVER;
 
     const gradeText = book.grade_level === 'all' ? 'All Grades' :
         book.grade_level.charAt(0).toUpperCase() + book.grade_level.slice(1).replace(/(\d)/, ' $1');
 
+    // Determine icon for fallback
+    let iconClass = 'fa-book';
+    let typeLabel = 'BOOK';
+    
+    if (book.content_type === 'video') {
+        iconClass = 'fa-video';
+        typeLabel = 'VIDEO';
+    } else if (book.content_type === 'lesson') {
+        iconClass = 'fa-file-powerpoint';
+        typeLabel = 'LESSON';
+    } else if (book.content_type === 'module') {
+        iconClass = 'fa-file-alt';
+        typeLabel = 'MODULE';
+    }
+
+    // Only show the badge if there is NO cover photo
+    const typeBadge = !hasCover ? `<span class="type-badge ${book.content_type}">${typeLabel}</span>` : '';
+
+    const progress = book.progress ? Math.round(book.progress) : 0;
+    const progressBar = progress > 0 ? `
+        <div class="reading-progress-bar" style="height: 4px; background: #E1E8ED; border-radius: 2px; margin-top: 0.5rem;">
+            <div style="width: ${progress}%; height: 100%; background: linear-gradient(90deg, var(--primary-blue), var(--primary-green)); border-radius: 2px;"></div>
+        </div>
+        <small style="color: var(--text-gray);">${progress}% read</small>
+    ` : '';
+
     card.innerHTML = `
-        <div class="book-cover">
-            <img src="${coverUrl}" alt="${book.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-            <div class="book-icon" style="display: none;">
-                <i class="fas fa-book"></i>
+        <div class="book-cover" style="background: ${hasCover ? '#fff' : 'var(--bg-yellow)'};">
+            ${typeBadge}
+            <img src="${coverUrl}" alt="${book.title}" 
+                 style="z-index: 2; position: relative; width: 100%; height: 100%; object-fit: contain;" 
+                 onerror="this.style.display='none'; this.parentElement.querySelector('.book-icon').style.display='flex'; this.parentElement.style.background='var(--bg-yellow)'">
+            
+            <div class="book-icon" style="display: ${hasCover ? 'none' : 'flex'}; flex-direction: column; align-items: center; gap: 0.5rem; position: absolute; z-index: 1;">
+                <i class="fas ${iconClass}" style="font-size: 3rem; opacity: 0.2; color: var(--text-dark);"></i>
+                <span style="font-size: 0.8rem; font-weight: bold; opacity: 0.2; letter-spacing: 2px;">${typeLabel}</span>
             </div>
         </div>
         <div class="book-info">
@@ -315,10 +462,16 @@ function createBookCard(book) {
                 <span class="book-category">${book.category}</span>
                 <span class="book-grade">${gradeText}</span>
             </div>
+            ${progressBar}
         </div>
     `;
 
     return card;
+}
+
+// Update renderBooksGrid to be the standard
+function renderBooksList(containerId, books) {
+    renderBooksGrid(containerId, books);
 }
 
 // Render categories grid
@@ -339,67 +492,9 @@ function renderCategoriesGrid(categories) {
     });
 }
 
-// Create category card element
-function createCategoryCard(category) {
-    const card = document.createElement('div');
-    card.className = 'category-card';
-    card.onclick = () => browseCategory(category.category_name);
-
-    const iconClass = category.icon || 'fas fa-book';
-
-    card.innerHTML = `
-        <div class="category-icon">
-            <i class="${iconClass}"></i>
-        </div>
-        <h3 class="category-title">${category.category_name}</h3>
-        <p class="category-description">${category.description || 'Browse books in this category'}</p>
-    `;
-
-    return card;
-}
-
 // Open book
 function openBook(bookId) {
     window.location.href = `reader.php?id=${bookId}`;
-}
-
-// Browse category
-async function browseCategory(category) {
-    // Update navigation
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    const browseNav = document.querySelector(`[onclick="showSection('browse')"]`);
-    if (browseNav) browseNav.classList.add('active');
-
-    // Show browse section without loading all books
-    document.querySelectorAll('.content-section').forEach(section => {
-        section.classList.remove('active');
-    });
-    const browseSection = document.getElementById('browse-section');
-    if (browseSection) browseSection.classList.add('active');
-
-    // Set category filter and load filtered books
-    const subjectFilter = document.getElementById('subjectFilter');
-    if (subjectFilter) {
-        subjectFilter.value = category;
-    }
-    
-    // Load filtered books directly
-    try {
-        const url = `api/ebooks.php?action=get_filtered&subject=${encodeURIComponent(category)}`;
-        const response = await fetch(url);
-        const result = await response.json();
-
-        if (result.success) {
-            renderBooksGrid('allBooks', result.books);
-        } else {
-            renderBooksGrid('allBooks', []);
-        }
-    } catch (error) {
-        console.error('Filter error:', error);
-        showMessage('Failed to load books for this category', 'error');
-    }
 }
 
 // Search books
@@ -427,7 +522,7 @@ async function searchBooks() {
         if (result.success) {
             // Show search results in browse section
             showSection('browse');
-            renderBooksGrid('allBooks', result.books);
+            setAllBooksData(result.books);
             
             // Update section header to show search results
             const browseHeader = document.querySelector('#browse-section .section-header h2');
@@ -579,9 +674,9 @@ async function filterBooks() {
         const result = await response.json();
 
         if (result.success) {
-            renderBooksGrid('allBooks', result.books);
+            setAllBooksData(result.books);
         } else {
-            renderBooksGrid('allBooks', []);
+            setAllBooksData([]);
         }
     } catch (error) {
         console.error('Filter error:', error);
@@ -670,7 +765,66 @@ document.addEventListener('keydown', function(e) {
             modal.style.display = 'none';
         }
     }
+
+    // Arrow keys for page navigation in browse section
+    const browseSection = document.getElementById('browse-section');
+    if (browseSection && browseSection.classList.contains('active')) {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            changePage(1);
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            changePage(-1);
+        }
+    }
 });
+
+// Pagination for books
+let currentBooksPage = 1;
+let booksPerPage = 12;
+let allBooksData = [];
+
+function setAllBooksData(books) {
+    allBooksData = books || [];
+    currentBooksPage = 1;
+    renderBooksPage();
+}
+
+function renderBooksPage() {
+    const start = (currentBooksPage - 1) * booksPerPage;
+    const end = start + booksPerPage;
+    const pageBooks = allBooksData.slice(start, end);
+    
+    renderBooksGrid('allBooks', pageBooks);
+    updatePaginationControls();
+}
+
+function updatePaginationControls() {
+    const totalPages = Math.ceil(allBooksData.length / booksPerPage) || 1;
+    const pageInfo = document.getElementById('pageInfo');
+    const prevBtn = document.getElementById('prevPageBtn');
+    const nextBtn = document.getElementById('nextPageBtn');
+    
+    if (pageInfo) {
+        pageInfo.textContent = `Page ${currentBooksPage} of ${totalPages}`;
+    }
+    if (prevBtn) {
+        prevBtn.disabled = currentBooksPage <= 1;
+    }
+    if (nextBtn) {
+        nextBtn.disabled = currentBooksPage >= totalPages;
+    }
+}
+
+function changePage(direction) {
+    const totalPages = Math.ceil(allBooksData.length / booksPerPage) || 1;
+    const newPage = currentBooksPage + direction;
+    
+    if (newPage >= 1 && newPage <= totalPages) {
+        currentBooksPage = newPage;
+        renderBooksPage();
+    }
+}
 
 // Load dashboard data on page load
 async function loadDashboardData() {

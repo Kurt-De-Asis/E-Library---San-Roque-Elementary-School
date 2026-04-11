@@ -5,11 +5,13 @@ let currentAdminSection = 'books';
 
 // DOM Content Loaded
 document.addEventListener('DOMContentLoaded', async function() {
+    console.log('Admin Dashboard: Initializing...');
+    
     // Check authentication and admin privileges
     const sessionCheck = await checkSession();
 
     if (!sessionCheck.logged_in || sessionCheck.user.user_type !== 'admin') {
-        window.location.href = 'index.php';
+        window.location.href = '../index.php';
         return;
     }
 
@@ -19,7 +21,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         adminNameElement.textContent = sessionCheck.user.full_name;
     }
 
-    // Initialize admin dashboard
+    // Initialize admin dashboard components
     initializeAdminDashboard();
 
     // Load initial data
@@ -28,30 +30,69 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 // Initialize admin dashboard
 function initializeAdminDashboard() {
+    console.log('Initializing admin dashboard components...');
+    
     // Initialize navigation
     const navItems = document.querySelectorAll('.admin-nav .nav-item');
     navItems.forEach(item => {
         item.addEventListener('click', function() {
-            const section = this.getAttribute('onclick')?.match(/showAdminSection\('(.+?)'\)/)?.[1];
-            if (section) {
-                showAdminSection(section);
+            // Get section name from the onclick attribute or text
+            let section = '';
+            const onclickAttr = this.getAttribute('onclick');
+            if (onclickAttr) {
+                const match = onclickAttr.match(/showAdminSection\('(.+?)'\)/);
+                if (match) section = match[1];
             }
+            
+            if (!section) {
+                // Fallback: try to derive from text content
+                section = this.textContent.trim().toLowerCase().split(' ')[1] || 'books';
+            }
+            
+            showAdminSection(section);
         });
     });
 
     // Initialize forms
-    initializeBookForm();
-    initializeCategoryForm();
+    if (typeof initializeBookForm === 'function') initializeBookForm();
+    if (typeof initializeCategoryForm === 'function') initializeCategoryForm();
+}
+
+// Load initial data for all sections
+async function loadAdminData() {
+    console.log('Loading all admin data...');
+    try {
+        await Promise.all([
+            loadBooks(),
+            loadUsers(),
+            loadSections(),
+            loadCategoriesAdmin(),
+            loadReports()
+        ]);
+    } catch (error) {
+        console.error('Error loading initial admin data:', error);
+        // Ensure loading indicators are replaced with error messages if they get stuck
+        const tableBodies = ['booksTableBody', 'usersTableBody', 'sectionsTableBody', 'categoriesTableBody'];
+        tableBodies.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && el.innerHTML.includes('Loading')) {
+                el.innerHTML = '<tr><td colspan="10" class="loading">Error loading data. Please refresh.</td></tr>';
+            }
+        });
+    }
 }
 
 // Show admin section
 function showAdminSection(sectionName) {
+    console.log('Switching to section:', sectionName);
+    
     // Update navigation
     document.querySelectorAll('.admin-nav .nav-item').forEach(item => {
         item.classList.remove('active');
     });
 
-    const activeNav = document.querySelector(`[onclick="showAdminSection('${sectionName}')"]`);
+    // Try to find the nav item by its onclick attribute
+    const activeNav = document.querySelector(`[onclick*="showAdminSection('${sectionName}')"]`);
     if (activeNav) {
         activeNav.classList.add('active');
     }
@@ -68,22 +109,11 @@ function showAdminSection(sectionName) {
 
     currentAdminSection = sectionName;
 
-    // Load section data
+    // Load section specific data
     loadAdminSectionData(sectionName);
 }
 
-// Load admin data
-async function loadAdminData() {
-    try {
-        // Load books by default
-        await loadBooks();
-        await loadReports();
-    } catch (error) {
-        console.error('Error loading admin data:', error);
-    }
-}
-
-// Load admin section data
+// Load data for a specific section
 async function loadAdminSectionData(section) {
     try {
         switch (section) {
@@ -135,6 +165,7 @@ async function loadBooks(filter = 'all') {
 
 // Render books table
 function renderBooksTable(tableBody, books) {
+    const DEFAULT_BOOK_COVER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='120' viewBox='0 0 100 120'%3E%3Crect width='100' height='120' fill='%23e8f5e9'/%3E%3Cpath d='M20 20h60v80H20z' fill='%23c8e6c9'/%3E%3Ctext x='50' y='65' font-family='Arial' font-size='12' fill='%232e7d32' text-anchor='middle'%3ENo Cover%3C/text%3E%3C/svg%3E";
     tableBody.innerHTML = '';
 
     if (!books || books.length === 0) {
@@ -147,26 +178,26 @@ function renderBooksTable(tableBody, books) {
 
         const coverUrl = book.cover_image ?
             `../uploads/covers/${book.cover_image}` :
-            '../assets/images/default-book.png';
+            DEFAULT_BOOK_COVER;
 
         const statusClass = book.is_approved ? 'approved' : 'pending';
         const statusText = book.is_approved ? 'Approved' : 'Pending';
 
         row.innerHTML = `
-            <td><img src="${coverUrl}" alt="${book.title}" class="table-cover" onerror="this.src='../assets/images/default-book.png'"></td>
+            <td><img src="${coverUrl}" alt="${book.title}" class="table-cover" onerror="this.src='${DEFAULT_BOOK_COVER}'"></td>
             <td>${book.title}</td>
             <td>${book.author || 'Unknown'}</td>
             <td>${book.category}</td>
             <td>${book.grade_level === 'all' ? 'All Grades' : book.grade_level.charAt(0).toUpperCase() + book.grade_level.slice(1)}</td>
             <td><span class="status ${statusClass}">${statusText}</span></td>
             <td class="actions">
-                <button onclick="editBook(${book.ebook_id})" class="btn btn-secondary btn-sm">
+                <button onclick="editBook(${book.ebook_id})" class="btn btn-secondary btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button onclick="approveBook(${book.ebook_id})" class="btn btn-success btn-sm" ${book.is_approved ? 'disabled' : ''}>
+                <button onclick="approveBook(${book.ebook_id})" class="btn btn-success btn-sm" ${book.is_approved ? 'disabled' : ''} title="Approve">
                     <i class="fas fa-check"></i>
                 </button>
-                <button onclick="deleteBook(${book.ebook_id})" class="btn btn-danger btn-sm">
+                <button onclick="deleteBook(${book.ebook_id})" class="btn btn-danger btn-sm" title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
@@ -210,8 +241,17 @@ function renderUsersTable(tableBody, users) {
     users.forEach(user => {
         const row = document.createElement('tr');
 
-        const gradeText = user.grade_level === 'n/a' ? 'N/A' :
-            user.grade_level.charAt(0).toUpperCase() + user.grade_level.slice(1);
+        let gradeSectionText = '';
+        if (user.user_type === 'student' || user.user_type === 'parent') {
+            const gradeText = user.grade_level === 'n/a' ? '' : user.grade_level.charAt(0).toUpperCase() + user.grade_level.slice(1);
+            const sectionText = user.student_section_name || '';
+            const prefix = user.user_type === 'parent' ? "Child: " : "";
+            gradeSectionText = prefix + gradeText + (gradeText && sectionText ? ' - ' : '') + sectionText;
+        } else if (user.user_type === 'teacher') {
+            gradeSectionText = user.handles_sections ? 'Handles: ' + user.handles_sections : 'No section assigned';
+        } else {
+            gradeSectionText = 'N/A';
+        }
 
         const lastLogin = user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never';
 
@@ -219,17 +259,17 @@ function renderUsersTable(tableBody, users) {
             <td>${user.full_name}</td>
             <td>${user.username}</td>
             <td><span class="user-type ${user.user_type}">${user.user_type.charAt(0).toUpperCase() + user.user_type.slice(1)}</span></td>
-            <td>${gradeText}</td>
+            <td>${gradeSectionText || 'N/A'}</td>
             <td><span class="status ${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Active' : 'Inactive'}</span></td>
             <td>${lastLogin}</td>
             <td class="actions">
-                <button onclick="editUser(${user.user_id})" class="btn btn-secondary btn-sm">
+                <button onclick="editUser(${user.user_id})" class="btn btn-secondary btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button onclick="toggleUserStatus(${user.user_id}, ${user.is_active ? 0 : 1})" class="btn ${user.is_active ? 'btn-warning' : 'btn-success'} btn-sm">
+                <button onclick="toggleUserStatus(${user.user_id}, ${user.is_active ? 0 : 1})" class="btn ${user.is_active ? 'btn-warning' : 'btn-success'} btn-sm" title="${user.is_active ? 'Deactivate' : 'Activate'}">
                     <i class="fas ${user.is_active ? 'fa-ban' : 'fa-check'}"></i>
                 </button>
-                <button onclick="deleteUser(${user.user_id})" class="btn btn-danger btn-sm">
+                <button onclick="deleteUser(${user.user_id})" class="btn btn-danger btn-sm" title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
@@ -280,10 +320,10 @@ function renderCategoriesTable(tableBody, categories) {
             <td>${category.display_order}</td>
             <td><span class="status ${category.is_active ? 'active' : 'inactive'}">${category.is_active ? 'Active' : 'Inactive'}</span></td>
             <td class="actions">
-                <button onclick="editCategory(${category.category_id})" class="btn btn-secondary btn-sm">
+                <button onclick="editCategory(${category.category_id})" class="btn btn-secondary btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button onclick="deleteCategory(${category.category_id})" class="btn btn-danger btn-sm">
+                <button onclick="deleteCategory(${category.category_id})" class="btn btn-danger btn-sm" title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
@@ -301,10 +341,10 @@ async function loadReports() {
 
         if (result.success) {
             // Update report cards
-            document.getElementById('totalBooks').textContent = result.reports.total_books || 0;
-            document.getElementById('totalUsers').textContent = result.reports.total_users || 0;
-            document.getElementById('totalDownloads').textContent = result.reports.total_downloads || 0;
-            document.getElementById('totalViews').textContent = result.reports.total_views || 0;
+            if (document.getElementById('totalBooks')) document.getElementById('totalBooks').textContent = result.reports.total_books || 0;
+            if (document.getElementById('totalUsers')) document.getElementById('totalUsers').textContent = result.reports.total_users || 0;
+            if (document.getElementById('totalDownloads')) document.getElementById('totalDownloads').textContent = result.reports.total_downloads || 0;
+            if (document.getElementById('totalViews')) document.getElementById('totalViews').textContent = result.reports.total_views || 0;
         }
     } catch (error) {
         console.error('Error loading reports:', error);
@@ -351,6 +391,7 @@ async function loadBookCategories() {
         if (result.success) {
             const categorySelect = document.getElementById('bookCategory');
             if (categorySelect) {
+                categorySelect.innerHTML = '<option value="">Select Category</option>';
                 result.categories.forEach(category => {
                     const option = document.createElement('option');
                     option.value = category.category_name;
@@ -370,7 +411,6 @@ async function handleBookSubmit(e) {
 
     const formData = new FormData(e.target);
     const submitButton = e.target.querySelector('button[type="submit"]');
-    const modalTitle = document.getElementById('bookModalTitle');
 
     const isEdit = formData.get('book_id') ? true : false;
     const action = isEdit ? 'update_book' : 'add_book';
@@ -406,27 +446,84 @@ async function handleBookSubmit(e) {
 // Show add book modal
 function showAddBookModal() {
     const modal = document.getElementById('bookModal');
-    const form = document.getElementById('bookForm');
     const modalTitle = document.getElementById('bookModalTitle');
+    const form = document.getElementById('bookForm');
+    const bookFile = document.getElementById('bookFile');
 
     // Reset form
-    form.reset();
+    if (form) form.reset();
     document.getElementById('bookId').value = '';
-
-    // Update title
-    modalTitle.textContent = 'Add New Book';
+    
+    // Set default title
+    if (modalTitle) modalTitle.textContent = 'Add New Material';
+    
+    // File is required for new uploads
+    if (bookFile) bookFile.required = true;
+    
+    // Update label based on default selection
+    updateBookFileUI();
 
     // Show modal
-    modal.style.display = 'block';
+    if (modal) modal.style.display = 'block';
 }
 
 // Close book modal
 function closeBookModal() {
     const modal = document.getElementById('bookModal');
-    modal.style.display = 'none';
+    if (modal) modal.style.display = 'none';
 }
 
-// Edit book
+// Function to update file input label and accepted types
+function updateBookFileUI() {
+    const contentType = document.getElementById('bookContentType').value;
+    const fileLabel = document.getElementById('bookFileLabel');
+    const fileInput = document.getElementById('bookFile');
+    const isEditing = document.getElementById('bookId').value !== '';
+    
+    if (!fileLabel || !fileInput) return;
+    
+    let labelText = 'File';
+    let acceptTypes = '.pdf,.epub';
+    
+    switch(contentType) {
+        case 'video':
+            labelText = 'Video File (MP4/WebM)';
+            acceptTypes = '.mp4,.webm';
+            break;
+        case 'lesson':
+            labelText = 'Lesson/PPT File (PPT/PPTX/PDF)';
+            acceptTypes = '.ppt,.pptx,.pdf';
+            break;
+        case 'module':
+            labelText = 'Module File (PDF/EPUB)';
+            acceptTypes = '.pdf,.epub';
+            break;
+        case 'reference':
+            labelText = 'Reference File (PDF/EPUB)';
+            acceptTypes = '.pdf,.epub';
+            break;
+        default:
+            labelText = 'Book File (PDF/EPUB)';
+            acceptTypes = '.pdf,.epub';
+    }
+    
+    fileLabel.textContent = labelText + (isEditing ? '' : ' *');
+    fileInput.accept = acceptTypes;
+    
+    // If editing, file is optional (keep existing if not changed)
+    if (isEditing) {
+        fileInput.required = false;
+    }
+}
+
+// Add listener for content type change
+document.addEventListener('DOMContentLoaded', function() {
+    const contentTypeSelect = document.getElementById('bookContentType');
+    if (contentTypeSelect) {
+        contentTypeSelect.addEventListener('change', updateBookFileUI);
+    }
+});
+
 async function editBook(ebookId) {
     try {
         const response = await fetch(`../api/ebooks.php?action=get_book&id=${ebookId}`);
@@ -448,10 +545,21 @@ async function editBook(ebookId) {
             document.getElementById('bookContentType').value = book.content_type;
 
             // Update title
-            modalTitle.textContent = 'Edit Book';
+            if (modalTitle) {
+                let typeDisplay = 'Book';
+                if (book.content_type === 'video') typeDisplay = 'Educational Video';
+                else if (book.content_type === 'lesson') typeDisplay = 'Lesson Plan/PPT';
+                else if (book.content_type === 'module') typeDisplay = 'Module';
+                else if (book.content_type === 'reference') typeDisplay = 'Reference';
+                
+                modalTitle.textContent = 'Edit ' + typeDisplay;
+            }
+            
+            // Update file UI
+            updateBookFileUI();
 
             // Show modal
-            modal.style.display = 'block';
+            if (modal) modal.style.display = 'block';
         } else {
             showMessage('Failed to load book details', 'error');
         }
@@ -564,16 +672,16 @@ function showAddCategoryModal() {
     const form = document.getElementById('categoryForm');
 
     // Reset form
-    form.reset();
+    if (form) form.reset();
 
     // Show modal
-    modal.style.display = 'block';
+    if (modal) modal.style.display = 'block';
 }
 
 // Close category modal
 function closeCategoryModal() {
     const modal = document.getElementById('categoryModal');
-    modal.style.display = 'none';
+    if (modal) modal.style.display = 'none';
 }
 
 // Save settings
@@ -615,7 +723,9 @@ function showMessage(message, type = 'info') {
         messageElement = document.createElement('div');
         messageElement.id = 'adminMessage';
         messageElement.className = 'message';
-        document.querySelector('.admin-content').prepend(messageElement);
+        const adminContent = document.querySelector('.admin-content');
+        if (adminContent) adminContent.prepend(messageElement);
+        else document.body.prepend(messageElement);
     }
 
     messageElement.innerHTML = message;
@@ -637,13 +747,13 @@ function showAddTeacherModal() {
     if (form) form.reset();
     
     // Show modal
-    modal.style.display = 'flex';
+    if (modal) modal.style.display = 'flex';
 }
 
 // Close teacher modal
 function closeTeacherModal() {
     const modal = document.getElementById('teacherModal');
-    modal.style.display = 'none';
+    if (modal) modal.style.display = 'none';
 }
 
 // Handle add teacher
@@ -664,8 +774,10 @@ async function addTeacher() {
     }
     
     const btn = document.querySelector('#teacherModal .btn-success');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    }
     
     try {
         const response = await fetch('../api/admin.php?action=add_teacher', {
@@ -687,8 +799,10 @@ async function addTeacher() {
         console.error('Add teacher error:', error);
         showMessage('An error occurred', 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-user-plus"></i> Create Teacher Account';
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-user-plus"></i> Create Teacher Account';
+        }
     }
 }
 
@@ -712,11 +826,18 @@ async function editUser(userId) {
             document.getElementById('userGradeLevel').value = user.grade_level;
             document.getElementById('userPassword').value = ''; // Clear password field
 
+            // Load sections for this grade level
+            await loadSectionsForUserModal(user.section_id);
+
+            // Toggle teacher hint
+            const hint = document.getElementById('teacherSectionHint');
+            if (hint) hint.style.display = (user.user_type === 'teacher') ? 'block' : 'none';
+
             // Update title
-            modalTitle.textContent = 'Edit User';
+            if (modalTitle) modalTitle.textContent = 'Edit User';
 
             // Show modal
-            modal.style.display = 'flex';
+            if (modal) modal.style.display = 'flex';
         } else {
             showMessage(result.message || 'Failed to load user details', 'error');
         }
@@ -726,7 +847,49 @@ async function editUser(userId) {
     }
 }
 
-// Toggle user status
+// Load sections for user modal based on grade level
+async function loadSectionsForUserModal(selectedSectionId = null) {
+    const gradeLevel = document.getElementById('userGradeLevel').value;
+    const sectionSelect = document.getElementById('userSection');
+    const userType = document.getElementById('userType').value;
+
+    if (!sectionSelect) return;
+
+    if (gradeLevel === 'n/a' && userType !== 'teacher') {
+        sectionSelect.innerHTML = '<option value="">No Section</option>';
+        return;
+    }
+
+    try {
+        let url = `../api/admin.php?action=get_sections_by_grade&grade_level=${encodeURIComponent(gradeLevel)}`;
+        // For teachers, they might want to see all sections regardless of their "grade level" setting
+        if (userType === 'teacher') {
+            url = `../api/admin.php?action=get_sections`;
+        }
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        sectionSelect.innerHTML = '<option value="">No Section</option>';
+
+        if (result.success) {
+            const sections = result.sections;
+            sections.forEach(section => {
+                const option = document.createElement('option');
+                option.value = section.section_id;
+                option.textContent = (userType === 'teacher') ? `${section.grade_level} - ${section.section_name}` : section.section_name;
+                if (selectedSectionId == section.section_id) {
+                    option.selected = true;
+                }
+                sectionSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading sections for modal:', error);
+    }
+}
+
+// Update user status
 async function toggleUserStatus(userId, newStatus) {
     const action = newStatus ? 'activate' : 'deactivate';
     if (!confirm(`Are you sure you want to ${action} this user?`)) return;
@@ -749,6 +912,64 @@ async function toggleUserStatus(userId, newStatus) {
     } catch (error) {
         console.error('Toggle user status error:', error);
         showMessage('An error occurred', 'error');
+    }
+}
+
+// Update user details
+async function updateUser() {
+    const userId = document.getElementById('userId').value;
+    const fullName = document.getElementById('userFullName').value.trim();
+    const email = document.getElementById('userEmail').value.trim();
+    const username = document.getElementById('userUsername').value.trim();
+    const userType = document.getElementById('userType').value;
+    const gradeLevel = document.getElementById('userGradeLevel').value;
+    const sectionId = document.getElementById('userSection').value;
+    const password = document.getElementById('userPassword').value;
+
+    if (!fullName || !email || !username || !userType) {
+        showMessage('Full name, email, username, and user type are required', 'error');
+        return;
+    }
+
+    const btn = document.querySelector('#userModal .btn-primary');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+    }
+
+    try {
+        const response = await fetch('../api/admin.php?action=update_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                full_name: fullName,
+                email,
+                username,
+                user_type: userType,
+                grade_level: gradeLevel,
+                section_id: sectionId || null,
+                password
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showMessage('User updated successfully!', 'success');
+            closeUserModal();
+            loadUsers();
+        } else {
+            showMessage(result.message || 'Failed to update user', 'error');
+        }
+    } catch (error) {
+        console.error('Update user error:', error);
+        showMessage('An error occurred', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save"></i> Update User';
+        }
     }
 }
 
@@ -785,62 +1006,10 @@ function deleteCategory(categoryId) {
     showMessage('Category deletion functionality not yet implemented', 'info');
 }
 
-// Update user
-async function updateUser() {
-    const userId = document.getElementById('userId').value;
-    const fullName = document.getElementById('userFullName').value.trim();
-    const email = document.getElementById('userEmail').value.trim();
-    const username = document.getElementById('userUsername').value.trim();
-    const userType = document.getElementById('userType').value;
-    const gradeLevel = document.getElementById('userGradeLevel').value;
-    const password = document.getElementById('userPassword').value;
-
-    if (!fullName || !email || !username || !userType) {
-        showMessage('Full name, email, username, and user type are required', 'error');
-        return;
-    }
-
-    const btn = document.querySelector('#userModal .btn-primary');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
-
-    try {
-        const response = await fetch('../api/admin.php?action=update_user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: userId,
-                full_name: fullName,
-                email,
-                username,
-                user_type: userType,
-                grade_level: gradeLevel,
-                password
-            })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showMessage('User updated successfully!', 'success');
-            closeUserModal();
-            loadUsers();
-        } else {
-            showMessage(result.message || 'Failed to update user', 'error');
-        }
-    } catch (error) {
-        console.error('Update user error:', error);
-        showMessage('An error occurred', 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save"></i> Update User';
-    }
-}
-
 // Close user modal
 function closeUserModal() {
     const modal = document.getElementById('userModal');
-    modal.style.display = 'none';
+    if (modal) modal.style.display = 'none';
 }
 
 // Close modals when clicking outside
@@ -947,10 +1116,10 @@ function renderSectionsTable(tableBody, sections) {
             <td>${studentCount} students</td>
             <td><span class="status ${statusClass}">${statusText}</span></td>
             <td class="actions">
-                <button onclick="editSection(${section.section_id})" class="btn btn-secondary btn-sm">
+                <button onclick="editSection(${section.section_id})" class="btn btn-secondary btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button onclick="deleteSection(${section.section_id})" class="btn btn-danger btn-sm">
+                <button onclick="deleteSection(${section.section_id})" class="btn btn-danger btn-sm" title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
@@ -966,13 +1135,13 @@ function showAddSectionModal() {
     const form = document.getElementById('sectionForm');
 
     // Reset form
-    form.reset();
+    if (form) form.reset();
 
     // Load teachers for dropdown
     loadTeachersForSection();
 
     // Show modal
-    modal.style.display = 'flex';
+    if (modal) modal.style.display = 'flex';
 }
 
 // Close section modal
@@ -983,13 +1152,15 @@ function closeSectionModal() {
     const submitBtn = document.getElementById('sectionSubmitBtn');
 
     // Reset form and modal state
-    form.reset();
-    document.getElementById('sectionId').value = '';
-    modalTitle.textContent = 'Add New Section';
-    submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Section';
-    submitBtn.setAttribute('onclick', 'addSection()');
+    if (form) form.reset();
+    if (document.getElementById('sectionId')) document.getElementById('sectionId').value = '';
+    if (modalTitle) modalTitle.textContent = 'Add New Section';
+    if (submitBtn) {
+        submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Section';
+        submitBtn.setAttribute('onclick', 'addSection()');
+    }
 
-    modal.style.display = 'none';
+    if (modal) modal.style.display = 'none';
 }
 
 // Load teachers for section assignment
@@ -1000,14 +1171,16 @@ async function loadTeachersForSection() {
 
         if (result.success) {
             const teacherSelect = document.getElementById('sectionTeacher');
-            teacherSelect.innerHTML = '<option value="">Select Teacher (Optional)</option>';
+            if (teacherSelect) {
+                teacherSelect.innerHTML = '<option value="">Select Teacher (Optional)</option>';
 
-            result.teachers.forEach(teacher => {
-                const option = document.createElement('option');
-                option.value = teacher.user_id;
-                option.textContent = teacher.full_name;
-                teacherSelect.appendChild(option);
-            });
+                result.teachers.forEach(teacher => {
+                    const option = document.createElement('option');
+                    option.value = teacher.user_id;
+                    option.textContent = teacher.full_name;
+                    teacherSelect.appendChild(option);
+                });
+            }
         }
     } catch (error) {
         console.error('Error loading teachers:', error);
@@ -1025,9 +1198,11 @@ async function addSection() {
         return;
     }
 
-    const btn = document.querySelector('#sectionModal .btn-success');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    const btn = document.getElementById('sectionSubmitBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    }
 
     try {
         const response = await fetch('../api/admin.php?action=add_section', {
@@ -1053,8 +1228,10 @@ async function addSection() {
         console.error('Add section error:', error);
         showMessage('An error occurred', 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-plus"></i> Create Section';
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-plus"></i> Create Section';
+        }
     }
 }
 
@@ -1080,12 +1257,14 @@ async function editSection(sectionId) {
             document.getElementById('sectionTeacher').value = section.teacher_id || '';
 
             // Update modal title and button
-            modalTitle.textContent = 'Edit Section';
-            submitBtn.innerHTML = '<i class="fas fa-save"></i> Update Section';
-            submitBtn.setAttribute('onclick', 'updateSection()');
+            if (modalTitle) modalTitle.textContent = 'Edit Section';
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-save"></i> Update Section';
+                submitBtn.setAttribute('onclick', 'updateSection()');
+            }
 
             // Show modal
-            modal.style.display = 'flex';
+            if (modal) modal.style.display = 'flex';
         } else {
             showMessage(result.message || 'Failed to load section details', 'error');
         }
@@ -1108,8 +1287,10 @@ async function updateSection() {
     }
 
     const btn = document.getElementById('sectionSubmitBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+    }
 
     try {
         const response = await fetch('../api/admin.php?action=update_section', {
@@ -1136,8 +1317,10 @@ async function updateSection() {
         console.error('Update section error:', error);
         showMessage('An error occurred', 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save"></i> Update Section';
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save"></i> Update Section';
+        }
     }
 }
 

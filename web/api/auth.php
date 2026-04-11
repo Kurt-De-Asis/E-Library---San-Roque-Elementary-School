@@ -47,43 +47,55 @@ function login() {
         return;
     }
     
-    $stmt = $conn->prepare("SELECT user_id, username, email, password_hash, full_name, user_type, grade_level, profile_image FROM users WHERE email = ? AND is_active = 1");
+    $stmt = $conn->prepare("SELECT user_id, username, email, password_hash, full_name, user_type, grade_level, profile_image, section_id FROM users WHERE email = ? AND is_active = 1");
     $stmt->bind_param("s", $email);
     $stmt->execute();
-    $result = $stmt->get_result();
+    $stmt->store_result();
     
-    if ($result->num_rows === 1) {
-        $user = $result->fetch_assoc();
+    if ($stmt->num_rows === 1) {
+        $u_id = null;
+        $u_username = null;
+        $u_email = null;
+        $u_password_hash = '';
+        $u_full_name = null;
+        $u_user_type = null;
+        $u_grade_level = null;
+        $u_profile_image = null;
+        $u_section_id = null;
+        
+        $stmt->bind_result($u_id, $u_username, $u_email, $u_password_hash, $u_full_name, $u_user_type, $u_grade_level, $u_profile_image, $u_section_id);
+        $stmt->fetch();
         
         // Verify password
-        if (password_verify($password, $user['password_hash'])) {
+        if (password_verify($password, $u_password_hash)) {
             // Set session variables
-            $_SESSION['user_id'] = $user['user_id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['full_name'] = $user['full_name'];
-            $_SESSION['user_type'] = $user['user_type'];
-            $_SESSION['grade_level'] = $user['grade_level'];
-            $_SESSION['email'] = $user['email'];
-            $_SESSION['profile_image'] = $user['profile_image'];
+            $_SESSION['user_id'] = $u_id;
+            $_SESSION['username'] = $u_username;
+            $_SESSION['full_name'] = $u_full_name;
+            $_SESSION['user_type'] = $u_user_type;
+            $_SESSION['grade_level'] = $u_grade_level;
+            $_SESSION['email'] = $u_email;
+            $_SESSION['profile_image'] = $u_profile_image;
+            $_SESSION['section_id'] = $u_section_id;
             
             // Update last login
             $updateStmt = $conn->prepare("UPDATE users SET last_login = NOW() WHERE user_id = ?");
-            $updateStmt->bind_param("i", $user['user_id']);
+            $updateStmt->bind_param("i", $u_id);
             $updateStmt->execute();
             $updateStmt->close();
             
             // Log activity
-            logActivity($conn, $user['user_id'], 'login', 'user', $user['user_id'], 'User logged in');
+            logActivity($conn, $u_id, 'login', 'user', $u_id, 'User logged in');
             
             echo json_encode([
                 'success' => true,
                 'message' => 'Login successful',
                 'user' => [
-                    'user_id' => $user['user_id'],
-                    'username' => $user['username'],
-                    'full_name' => $user['full_name'],
-                    'user_type' => $user['user_type'],
-                    'grade_level' => $user['grade_level']
+                    'user_id' => $u_id,
+                    'username' => $u_username,
+                    'full_name' => $u_full_name,
+                    'user_type' => $u_user_type,
+                    'grade_level' => $u_grade_level
                 ]
             ]);
         } else {
@@ -111,7 +123,10 @@ function register() {
     $full_name = sanitizeInput($_POST['full_name'] ?? '');
     $user_type = sanitizeInput($_POST['user_type'] ?? 'student');
     $grade_level = sanitizeInput($_POST['grade_level'] ?? 'n/a');
-    $section_id = intval($_POST['section_id'] ?? 0);
+    $section_id = isset($_POST['section_id']) && $_POST['section_id'] !== '' && $_POST['section_id'] !== 'none' ? intval($_POST['section_id']) : null;
+    
+    // Convert grade level to lowercase to match database
+    $grade_level = strtolower(str_replace(' ', '', $grade_level));
     
     // Validation
     if (empty($username) || empty($email) || empty($password) || empty($full_name)) {
@@ -137,8 +152,13 @@ function register() {
     $password_hash = password_hash($password, PASSWORD_DEFAULT);
     
     // Insert new user
-    $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, full_name, user_type, grade_level, section_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssssssi", $username, $email, $password_hash, $full_name, $user_type, $grade_level, $section_id);
+    if ($section_id !== null) {
+        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, full_name, user_type, grade_level, section_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssssi", $username, $email, $password_hash, $full_name, $user_type, $grade_level, $section_id);
+    } else {
+        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, full_name, user_type, grade_level, section_id) VALUES (?, ?, ?, ?, ?, ?, NULL)");
+        $stmt->bind_param("ssssss", $username, $email, $password_hash, $full_name, $user_type, $grade_level);
+    }
     
     if ($stmt->execute()) {
         $user_id = $stmt->insert_id;
