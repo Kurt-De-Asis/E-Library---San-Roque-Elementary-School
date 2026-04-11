@@ -273,19 +273,38 @@ function addBook() {
     // Handle file uploads
     $cover_image = '';
     $file_path = '';
+    $upload_error = '';
     
     // Cover image upload
     if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
         $cover_image = generateUniqueFileName($_FILES['cover_image']['name']);
-        move_uploaded_file($_FILES['cover_image']['tmp_name'], COVERS_PATH . $cover_image);
+        if (!move_uploaded_file($_FILES['cover_image']['tmp_name'], COVERS_PATH . $cover_image)) {
+            $upload_error = 'Failed to save cover image. Check directory permissions.';
+        }
     }
     
-    // Book file upload
+    // Book file upload - required for new books
     if (isset($_FILES['book_file']) && $_FILES['book_file']['error'] === UPLOAD_ERR_OK) {
         $file_path = generateUniqueFileName($_FILES['book_file']['name']);
-        move_uploaded_file($_FILES['book_file']['tmp_name'], BOOKS_PATH . $file_path);
+        if (!move_uploaded_file($_FILES['book_file']['tmp_name'], BOOKS_PATH . $file_path)) {
+            $upload_error = 'Failed to save book file. Check directory permissions.';
+        }
+    } elseif (!empty($_FILES['book_file']['error']) && $_FILES['book_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+        $upload_error = 'Book file upload failed. Error code: ' . $_FILES['book_file']['error'];
     }
 
+    // Check if book file was uploaded (required)
+    if (empty($file_path) && empty($upload_error)) {
+        echo json_encode(['success' => false, 'message' => 'Book file is required']);
+        return;
+    }
+
+    // If there was an upload error, return it
+    if (!empty($upload_error)) {
+        echo json_encode(['success' => false, 'message' => $upload_error]);
+        return;
+    }
+    
     $stmt = $conn->prepare("INSERT INTO ebooks (title, author, description, category, subject, grade_level, content_type, cover_image, file_path, uploaded_by, is_approved, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)");
     $uploaded_by = $_SESSION['user_id'];
     $section_id = intval($_POST['section_id'] ?? 0);
