@@ -9,20 +9,24 @@ import {
   SafeAreaView,
   ActivityIndicator,
   TextInput,
+  RefreshControl,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import axios from 'axios';
-import { API_BASE_URL, COVERS_URL } from '../config/api';
+import api from '../src/api';
+import { COVERS_URL } from '../config/api';
 
-export default function BrowseScreen({ navigation }) {
+export default function BrowseScreen({ navigation, route }) {
   const [books, setBooks] = useState([]);
   const [filteredBooks, setFilteredBooks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(route.params?.search || '');
   const [subjectFilter, setSubjectFilter] = useState('');
   const [contentTypeFilter, setContentTypeFilter] = useState('');
+  const [categories, setCategories] = useState([]);
 
   useEffect(() => {
+    loadCategories();
     loadBooks();
   }, []);
 
@@ -30,9 +34,26 @@ export default function BrowseScreen({ navigation }) {
     filterBooks();
   }, [books, searchQuery, subjectFilter, contentTypeFilter]);
 
+  useEffect(() => {
+    if (route.params?.search) {
+      setSearchQuery(route.params.search);
+    }
+  }, [route.params?.search]);
+
+  const loadCategories = async () => {
+    try {
+      const response = await api.get('/ebooks.php?action=get_categories');
+      if (response.data.success) {
+        setCategories(response.data.categories || []);
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
+
   const loadBooks = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/ebooks.php?action=get_all`);
+      const response = await api.get('/ebooks.php?action=get_all');
       if (response.data.success) {
         setBooks(response.data.books);
         setFilteredBooks(response.data.books);
@@ -41,26 +62,34 @@ export default function BrowseScreen({ navigation }) {
       console.error('Error loading books:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadBooks();
   };
 
   const filterBooks = () => {
     let filtered = books;
 
     if (searchQuery) {
-      filtered = filtered.filter(book =>
-        book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        book.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        book.category.toLowerCase().includes(searchQuery.toLowerCase())
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (book) =>
+          book.title.toLowerCase().includes(q) ||
+          book.author.toLowerCase().includes(q) ||
+          book.category.toLowerCase().includes(q),
       );
     }
 
     if (subjectFilter) {
-      filtered = filtered.filter(book => book.category === subjectFilter);
+      filtered = filtered.filter((book) => book.category === subjectFilter);
     }
 
     if (contentTypeFilter) {
-      filtered = filtered.filter(book => book.content_type === contentTypeFilter);
+      filtered = filtered.filter((book) => book.content_type === contentTypeFilter);
     }
 
     setFilteredBooks(filtered);
@@ -73,8 +102,9 @@ export default function BrowseScreen({ navigation }) {
     >
       <Image
         source={{
-          uri: `${COVERS_URL}/${item.cover_image}` ||
-               'https://via.placeholder.com/120x160/cccccc/666666?text=No+Cover'
+          uri: item.cover_image
+            ? `${COVERS_URL}/${item.cover_image}`
+            : 'https://via.placeholder.com/120x160/cccccc/666666?text=No+Cover',
         }}
         style={styles.bookCover}
         resizeMode="cover"
@@ -97,7 +127,7 @@ export default function BrowseScreen({ navigation }) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4A90E2" />
+          <ActivityIndicator size="large" color="#228B22" />
           <Text style={styles.loadingText}>Loading books...</Text>
         </View>
       </SafeAreaView>
@@ -129,12 +159,13 @@ export default function BrowseScreen({ navigation }) {
                 style={styles.picker}
               >
                 <Picker.Item label="All Subjects" value="" />
-                <Picker.Item label="English" value="English" />
-                <Picker.Item label="Mathematics" value="Mathematics" />
-                <Picker.Item label="Science" value="Science" />
-                <Picker.Item label="Filipino" value="Filipino" />
-                <Picker.Item label="Araling Panlipunan" value="Araling Panlipunan" />
-                <Picker.Item label="MAPEH" value="MAPEH" />
+                {categories.map((cat) => (
+                  <Picker.Item
+                    key={cat.category_id}
+                    label={cat.category_name}
+                    value={cat.category_name}
+                  />
+                ))}
               </Picker>
             </View>
           </View>
@@ -165,6 +196,14 @@ export default function BrowseScreen({ navigation }) {
         numColumns={2}
         contentContainerStyle={styles.booksContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#228B22']} />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No books found</Text>
+          </View>
+        }
       />
     </SafeAreaView>
   );
@@ -187,7 +226,7 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 20,
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#228B22',
   },
   title: {
     fontSize: 24,
@@ -197,7 +236,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#E8F4FD',
+    color: '#E8F4E8',
   },
   filtersContainer: {
     backgroundColor: '#fff',
@@ -280,7 +319,15 @@ const styles = StyleSheet.create({
   },
   bookCategory: {
     fontSize: 11,
-    color: '#4A90E2',
+    color: '#228B22',
     fontWeight: '500',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
   },
 });

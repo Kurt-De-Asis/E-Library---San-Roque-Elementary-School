@@ -1078,6 +1078,16 @@ async function saveForOffline() {
     }
 
     try {
+        // Check storage quota if API available
+        if (navigator.storage && navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            // If less than 50MB available, warn the user
+            if (estimate.quota && estimate.usage && (estimate.quota - estimate.usage < 50 * 1024 * 1024)) {
+                showMessage('Warning: Device storage is almost full', 'error');
+                return;
+            }
+        }
+
         // Update button to show saving
         offlineBtn.disabled = true;
         offlineBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span class="offline-text">Saving...</span>';
@@ -1096,16 +1106,13 @@ async function saveForOffline() {
             if (response.ok) {
                 const cache = await caches.open('elibrary-books-v1');
                 await cache.put(bookUrl, response);
+                saveBookMetadataOffline(currentBook);
                 updateOfflineButton(true);
                 showMessage('Book saved for offline reading!', 'success');
+            } else {
+                throw new Error('Failed to fetch book for caching');
             }
         }
-
-        // Also cache book metadata in localStorage
-        saveBookMetadataOffline(currentBook);
-
-        // Success is now handled by message listener or fallback above
-        // Remove the hardcoded setTimeout success message to avoid confusion
     } catch (error) {
         console.error('Failed to save for offline:', error);
         showMessage('Failed to save for offline', 'error');

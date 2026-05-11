@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,51 +8,70 @@ import {
   Image,
   SafeAreaView,
   ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import { API_BASE_URL, COVERS_URL } from '../config/api';
+import api from '../src/api';
+import { COVERS_URL } from '../config/api';
 
 export default function HomeScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [featuredBooks, setFeaturedBooks] = useState([]);
   const [recentBooks, setRecentBooks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    loadUserData();
-    loadBooks();
+    loadData();
   }, []);
 
-  const loadUserData = async () => {
+  const loadData = async () => {
     try {
       const userData = await AsyncStorage.getItem('user');
-      if (userData) {
-        setUser(JSON.parse(userData));
-      }
+      if (userData) setUser(JSON.parse(userData));
+
+      const [featuredResponse, recentResponse] = await Promise.all([
+        api.get('/ebooks.php?action=get_featured'),
+        api.get('/ebooks.php?action=get_recent'),
+      ]);
+
+      if (featuredResponse.data.success) setFeaturedBooks(featuredResponse.data.books);
+      if (recentResponse.data.success) setRecentBooks(recentResponse.data.books);
     } catch (error) {
-      console.error('Error loading user data:', error);
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const loadBooks = async () => {
-    try {
-      const [featuredResponse, recentResponse] = await Promise.all([
-        axios.get(`${API_BASE_URL}/ebooks.php?action=get_featured`),
-        axios.get(`${API_BASE_URL}/ebooks.php?action=get_recent`),
-      ]);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadData();
+  }, []);
 
-      if (featuredResponse.data.success) {
-        setFeaturedBooks(featuredResponse.data.books);
-      }
-      if (recentResponse.data.success) {
-        setRecentBooks(recentResponse.data.books);
-      }
-    } catch (error) {
-      console.error('Error loading books:', error);
-    } finally {
-      setLoading(false);
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      navigation.navigate('Browse', { search: searchQuery.trim() });
     }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          try { await api.get('/auth.php?action=logout'); } catch { }
+          await AsyncStorage.multiRemove(['token', 'user']);
+          navigation.replace('Login');
+        },
+      },
+    ]);
   };
 
   const renderBookItem = ({ item }) => (
@@ -62,8 +81,9 @@ export default function HomeScreen({ navigation }) {
     >
       <Image
         source={{
-          uri: `${COVERS_URL}/${item.cover_image}` ||
-               'https://via.placeholder.com/120x160/cccccc/666666?text=No+Cover'
+          uri: item.cover_image
+            ? `${COVERS_URL}/${item.cover_image}`
+            : 'https://via.placeholder.com/120x160/cccccc/666666?text=No+Cover',
         }}
         style={styles.bookCover}
         resizeMode="cover"
@@ -75,9 +95,7 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.bookAuthor} numberOfLines={1}>
           by {item.author}
         </Text>
-        <Text style={styles.bookCategory}>
-          {item.category}
-        </Text>
+        <Text style={styles.bookCategory}>{item.category}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -86,7 +104,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4A90E2" />
+          <ActivityIndicator size="large" color="#228B22" />
           <Text style={styles.loadingText}>Loading books...</Text>
         </View>
       </SafeAreaView>
@@ -96,12 +114,32 @@ export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.welcomeText}>
-          Welcome, {user?.first_name || 'Student'}!
-        </Text>
-        <Text style={styles.subtitle}>
-          {user?.grade_level ? `Grade ${user.grade_level}` : 'Explore our library'}
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerText}>
+            <Text style={styles.welcomeText}>
+              Welcome, {user?.full_name || 'Student'}!
+            </Text>
+            <Text style={styles.subtitle}>
+              {user?.grade_level
+                ? `Grade ${user.grade_level}`
+                : 'Explore our library'}
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search books..."
+            placeholderTextColor="#ccc"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+          />
+        </View>
       </View>
 
       <FlatList
@@ -111,23 +149,33 @@ export default function HomeScreen({ navigation }) {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.sectionContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#228B22']} />
+        }
         ListHeaderComponent={
-          <>
-            <Text style={styles.sectionTitle}>Featured Books</Text>
-          </>
+          <Text style={styles.sectionTitle}>Featured Books</Text>
         }
         ListFooterComponent={
           <>
             <Text style={styles.sectionTitle}>Recently Added</Text>
-            <FlatList
-              data={recentBooks}
-              keyExtractor={(item) => `recent-${item.ebook_id}`}
-              renderItem={renderBookItem}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.sectionContainer}
-            />
+            {recentBooks.length > 0 ? (
+              <FlatList
+                data={recentBooks}
+                keyExtractor={(item) => `recent-${item.ebook_id}`}
+                renderItem={renderBookItem}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.sectionContainer}
+              />
+            ) : (
+              <Text style={styles.emptyText}>No recent books available</Text>
+            )}
           </>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptySection}>
+            <Text style={styles.emptyText}>No featured books available</Text>
+          </View>
         }
       />
     </SafeAreaView>
@@ -150,18 +198,48 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   header: {
-    padding: 20,
-    backgroundColor: '#4A90E2',
+    padding: 15,
+    backgroundColor: '#228B22',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerText: {
+    flex: 1,
   },
   welcomeText: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 5,
   },
   subtitle: {
+    fontSize: 14,
+    color: '#E8F4E8',
+  },
+  logoutBtn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  logoutText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  searchContainer: {
+    marginTop: 12,
+  },
+  searchInput: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
     fontSize: 16,
-    color: '#E8F4FD',
+    color: '#333',
   },
   sectionContainer: {
     padding: 15,
@@ -206,7 +284,16 @@ const styles = StyleSheet.create({
   },
   bookCategory: {
     fontSize: 11,
-    color: '#4A90E2',
+    color: '#228B22',
     fontWeight: '500',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    padding: 20,
+  },
+  emptySection: {
+    padding: 40,
   },
 });

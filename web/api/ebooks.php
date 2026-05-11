@@ -163,13 +163,13 @@ function getCategories($conn) {
 }
 
 function getMyBooks($conn) {
-    if (!isLoggedIn()) {
+    $user_id = getAuthUserId();
+    if (!$user_id) {
         echo json_encode(['success' => false, 'message' => 'User not logged in', 'books' => []]);
         return;
     }
     
     try {
-        $user_id = $_SESSION['user_id'];
         
         // Ensure reading_progress table exists
         $conn->query("CREATE TABLE IF NOT EXISTS reading_progress (
@@ -330,17 +330,24 @@ function getFilteredBooks($conn) {
 }
 
 function getReadingProgress($conn) {
-    if (!isLoggedIn()) {
+    $user_id = getAuthUserId();
+    if (!$user_id) {
         echo json_encode(['success' => false, 'message' => 'User not logged in']);
         return;
     }
     
-    // Read JSON input
+    // Accept JSON body, POST, or GET params (mobile uses GET)
     $input = json_decode(file_get_contents('php://input'), true);
-    $ebook_id = isset($input['ebook_id']) ? (int)$input['ebook_id'] : (isset($_POST['ebook_id']) ? (int)$_POST['ebook_id'] : 0);
+    $ebook_id = 0;
+    if (isset($input['ebook_id'])) {
+        $ebook_id = (int)$input['ebook_id'];
+    } elseif (isset($_GET['ebook_id'])) {
+        $ebook_id = (int)$_GET['ebook_id'];
+    } elseif (isset($_POST['ebook_id'])) {
+        $ebook_id = (int)$_POST['ebook_id'];
+    }
     
     try {
-        $user_id = $_SESSION['user_id'];
         $stmt = $conn->prepare("SELECT * FROM reading_progress WHERE user_id = ? AND ebook_id = ?");
         $stmt->bind_param("ii", $user_id, $ebook_id);
         $stmt->execute();
@@ -361,7 +368,8 @@ function getReadingProgress($conn) {
 }
 
 function markAsRead($conn) {
-    if (!isLoggedIn()) {
+    $user_id = getAuthUserId();
+    if (!$user_id) {
         echo json_encode(['success' => false, 'message' => 'User not logged in']);
         return;
     }
@@ -376,7 +384,6 @@ function markAsRead($conn) {
     if ($total_pages < $current_page) $total_pages = $current_page;
     
     try {
-        $user_id = $_SESSION['user_id'];
         $progress_percentage = ($current_page / $total_pages) * 100;
         
         $stmt = $conn->prepare("
@@ -403,13 +410,13 @@ function markAsRead($conn) {
 }
 
 function getBookmarks($conn) {
-    if (!isLoggedIn()) {
+    $user_id = getAuthUserId();
+    if (!$user_id) {
         echo json_encode(['success' => false, 'message' => 'User not logged in']);
         return;
     }
     
     try {
-        $user_id = $_SESSION['user_id'];
         $stmt = $conn->prepare("SELECT * FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC");
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
@@ -429,7 +436,8 @@ function getBookmarks($conn) {
 }
 
 function addBookmark($conn) {
-    if (!isLoggedIn()) {
+    $user_id = getAuthUserId();
+    if (!$user_id) {
         echo json_encode(['success' => false, 'message' => 'User not logged in']);
         return;
     }
@@ -441,7 +449,6 @@ function addBookmark($conn) {
     $note = isset($input['note']) ? sanitizeInput($input['note']) : '';
     
     try {
-        $user_id = $_SESSION['user_id'];
         $stmt = $conn->prepare("INSERT INTO bookmarks (user_id, ebook_id, page_number, note) VALUES (?, ?, ?, ?)");
         $stmt->bind_param("iiis", $user_id, $ebook_id, $page_number, $note);
         
@@ -459,7 +466,8 @@ function addBookmark($conn) {
 }
 
 function deleteBookmark($conn) {
-    if (!isLoggedIn()) {
+    $user_id = getAuthUserId();
+    if (!$user_id) {
         echo json_encode(['success' => false, 'message' => 'User not logged in']);
         return;
     }
@@ -469,7 +477,6 @@ function deleteBookmark($conn) {
     $bookmark_id = isset($input['bookmark_id']) ? (int)$input['bookmark_id'] : 0;
     
     try {
-        $user_id = $_SESSION['user_id'];
         $stmt = $conn->prepare("DELETE FROM bookmarks WHERE bookmark_id = ? AND user_id = ?");
         $stmt->bind_param("ii", $bookmark_id, $user_id);
         
@@ -532,8 +539,9 @@ function downloadBook($conn) {
 
             if (file_exists($file_path)) {
                 // Log download activity
-                if (isLoggedIn()) {
-                    logActivity($conn, $_SESSION['user_id'], 'download', 'ebook', $ebook_id, "Downloaded: {$book['title']}");
+                $logUserId = getAuthUserId();
+                if ($logUserId) {
+                    logActivity($conn, $logUserId, 'download', 'ebook', $ebook_id, "Downloaded: {$book['title']}");
                 }
 
                 // Clear any output buffers
@@ -580,9 +588,24 @@ function uploadBook($conn) {
     @set_time_limit(1200);
 
     try {
-        // Check if user is logged in and is a teacher
-        if (!isLoggedIn() || $_SESSION['user_type'] !== 'teacher') {
+        // Check if user is logged in and is a teacher (supports token + session auth)
+        $userId = getAuthUserId();
+        if (!$userId) {
             throw new Exception('Unauthorized access');
+        }
+        // Verify teacher role for upload
+        $userCheck = $conn->prepare("SELECT user_type FROM users WHERE user_id = ? AND is_active = 1");
+        $userCheck->bind_param("i", $userId);
+        $userCheck->execute();
+        $userResult = $userCheck->get_result();
+        if ($userResult->num_rows === 0) {
+            $userCheck->close();
+            throw new Exception('Unauthorized access');
+        }
+        $userRow = $userResult->fetch_assoc();
+        $userCheck->close();
+        if ($userRow['user_type'] !== 'teacher' && $userRow['user_type'] !== 'admin') {
+            throw new Exception('Only teachers and admins can upload');
         }
 
         // Detect if upload was too large for PHP settings
@@ -654,7 +677,7 @@ function uploadBook($conn) {
         }
 
         // Prepare database insert
-        $uploaded_by = $_SESSION['user_id'];
+        $uploaded_by = $userId;
         $section_id_value = $section_id > 0 ? $section_id : null;
         
         $sql = "INSERT INTO ebooks (title, author, description, category, subject, grade_level, section_id, content_type, cover_image, file_path, uploaded_by, is_approved, is_active) 
@@ -711,14 +734,45 @@ function getUploadErrorMessage($err_code) {
 
 // Get visibility filter SQL based on user type and grade/section
 function getGradeLevelFilter() {
-    if (!isLoggedIn()) {
-        return " AND is_active = 1 AND is_approved = 1";
+    $user_id = null;
+    $user_type = null;
+    $grade_level = 'n/a';
+    $section_id = null;
+    
+    // Try session-based auth first (web app)
+    if (isLoggedIn()) {
+        $user_id = $_SESSION['user_id'];
+        $user_type = $_SESSION['user_type'];
+        $grade_level = $_SESSION['grade_level'] ?? 'n/a';
+        $section_id = $_SESSION['section_id'] ?? null;
+    } else {
+        // Check Bearer token (mobile app)
+        $headers = getallheaders();
+        $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+        if (preg_match('/Bearer\s+(.+)$/i', $authHeader, $matches)) {
+            $conn = getDBConnection();
+            if ($conn) {
+                $token = $matches[1];
+                $stmt = $conn->prepare("SELECT user_id, user_type, grade_level, section_id FROM users WHERE api_token = ? AND is_active = 1");
+                $stmt->bind_param("s", $token);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                if ($result->num_rows === 1) {
+                    $user = $result->fetch_assoc();
+                    $user_id = (int)$user['user_id'];
+                    $user_type = $user['user_type'];
+                    $grade_level = $user['grade_level'] ?? 'n/a';
+                    $section_id = $user['section_id'] ?? null;
+                }
+                $stmt->close();
+                $conn->close();
+            }
+        }
     }
     
-    $user_id = $_SESSION['user_id'];
-    $user_type = $_SESSION['user_type'];
-    $grade_level = $_SESSION['grade_level'] ?? 'n/a';
-    $section_id = $_SESSION['section_id'] ?? null;
+    if (!$user_id) {
+        return " AND is_active = 1 AND is_approved = 1";
+    }
     
     // Admin can see everything
     if ($user_type === 'admin') {

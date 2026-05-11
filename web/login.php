@@ -1,7 +1,6 @@
 <?php
 require_once 'api/config.php';
 
-// Prevent browser caching
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -15,7 +14,6 @@ header('Expires: 0');
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <script>
-        // Force unregister service worker on localhost as early as possible
         if ('serviceWorker' in navigator && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
             navigator.serviceWorker.getRegistrations().then(function(registrations) {
                 for(let registration of registrations) {
@@ -42,7 +40,7 @@ header('Expires: 0');
                     </div>
                     <h1>San Roque Elementary School</h1>
                     <h2>E-Library System</h2>
-                    <p>Empowering Young Minds Through Digital Reading</p>
+                    <p>Empowering Young Minds Through Digital Learning</p>
                     
                     <div class="brand-footer">
                         <p>&copy; 2026 San Roque ES. All Rights Reserved.</p>

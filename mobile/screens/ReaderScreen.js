@@ -1,122 +1,194 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  ActivityIndicator,
   Alert,
+  Dimensions,
+  Share,
 } from 'react-native';
-import axios from 'axios';
-import API_BASE_URL from '../config/api';
+import { WebView } from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL } from '../config/api';
+import api from '../src/api';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ReaderScreen({ route, navigation }) {
   const { book } = route.params;
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(book.total_pages || 100);
+  const [token, setToken] = useState('');
+  const [progress, setProgress] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const webViewRef = useRef(null);
+
+  const isPdf = book.file_path?.toLowerCase().endsWith('.pdf') || book.content_type === 'book';
+  const isVideo = book.file_path?.toLowerCase().match(/\.(mp4|webm)$/);
+  const isPpt = book.file_path?.toLowerCase().match(/\.(ppt|pptx)$/);
 
   useEffect(() => {
-    // Load reading progress
-    loadReadingProgress();
+    init();
   }, []);
 
-  const loadReadingProgress = async () => {
+  const init = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/ebooks.php?action=get_progress&ebook_id=${book.ebook_id}`);
-      if (response.data.success && response.data.progress) {
-        setCurrentPage(response.data.progress.current_page || 1);
+      const storedToken = await AsyncStorage.getItem('token');
+      setToken(storedToken || '');
+
+      const res = await api.post('/ebooks.php', {
+        action: 'get_progress',
+        ebook_id: book.ebook_id,
+      });
+      if (res.data.success && res.data.progress) {
+        setProgress(res.data.progress);
       }
-    } catch (error) {
-      console.error('Error loading progress:', error);
+    } catch (e) {
+      console.error('Init error:', e);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const saveReadingProgress = async (page) => {
+  const saveProgress = async () => {
     try {
-      await axios.post(`${API_BASE_URL}/ebooks.php`, {
+      await api.post('/ebooks.php', {
         action: 'mark_read',
         ebook_id: book.ebook_id,
-        page: page,
-        total_pages: totalPages,
+        page: 1,
+        total_pages: 1,
       });
-    } catch (error) {
-      console.error('Error saving progress:', error);
-    }
-  };
-
-  const handlePageChange = (direction) => {
-    let newPage = currentPage;
-    if (direction === 'next' && currentPage < totalPages) {
-      newPage = currentPage + 1;
-    } else if (direction === 'prev' && currentPage > 1) {
-      newPage = currentPage - 1;
-    }
-
-    if (newPage !== currentPage) {
-      setCurrentPage(newPage);
-      saveReadingProgress(newPage);
+    } catch (e) {
+      console.error('Save progress error:', e);
     }
   };
 
   const handleClose = () => {
+    saveProgress();
     navigation.goBack();
   };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `Check out this book: ${book.title} by ${book.author}`,
+      });
+    } catch (e) {
+      console.error('Share error:', e);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color="#228B22" />
+          <Text style={styles.loadingText}>Loading reader...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerContent}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
+            <Text style={styles.closeBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (isVideo) {
+    const videoUrl = `${API_BASE_URL.replace('/api', '')}/api/serve.php?token=${token}&id=${book.ebook_id}`;
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleClose} style={styles.headerBtn}>
+            <Text style={styles.headerBtnText}>← Close</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>{book.title}</Text>
+          <TouchableOpacity onPress={handleShare} style={styles.headerBtn}>
+            <Text style={styles.headerBtnText}>Share</Text>
+          </TouchableOpacity>
+        </View>
+        <WebView
+          source={{ html: `
+            <html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;">
+              <video controls style="max-width:100%;max-height:100%;" src="${videoUrl}"></video>
+            </body></html>
+          ` }}
+          style={styles.videoContainer}
+          allowsInlineMediaPlayback
+        />
+      </SafeAreaView>
+    );
+  }
+
+  if (isPpt) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleClose} style={styles.headerBtn}>
+            <Text style={styles.headerBtnText}>← Close</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>{book.title}</Text>
+        </View>
+        <View style={styles.centerContent}>
+          <Text style={styles.placeholderIcon}>📊</Text>
+          <Text style={styles.infoText}>This is a PowerPoint file</Text>
+          <Text style={styles.infoSubtext}>{book.title}</Text>
+          <Text style={styles.infoSubtext}>by {book.author}</Text>
+          <TouchableOpacity style={styles.downloadBtn} onPress={handleShare}>
+            <Text style={styles.downloadBtnText}>Share this file</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // PDF reader via WebView
+  const pdfUrl = `${API_BASE_URL.replace('/api', '')}/api/serve.php?token=${token}&id=${book.ebook_id}`;
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-          <Text style={styles.closeButtonText}>← Close</Text>
+        <TouchableOpacity onPress={handleClose} style={styles.headerBtn}>
+          <Text style={styles.headerBtnText}>← Close</Text>
         </TouchableOpacity>
-        <View style={styles.bookInfo}>
-          <Text style={styles.bookTitle} numberOfLines={1}>
-            {book.title}
-          </Text>
-          <Text style={styles.pageInfo}>
-            Page {currentPage} of {totalPages}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.readerContainer}>
-        <Text style={styles.placeholderText}>
-          📖 PDF Reader
-        </Text>
-        <Text style={styles.instructionText}>
-          This is a placeholder for the PDF reader.
-        </Text>
-        <Text style={styles.instructionText}>
-          In a full implementation, you would integrate a PDF viewing library like react-native-pdf or expo-document-picker.
-        </Text>
-        <Text style={styles.bookDetails}>
-          Currently reading: {book.title}
-        </Text>
-        <Text style={styles.bookDetails}>
-          Author: {book.author}
-        </Text>
-      </View>
-
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={[styles.controlButton, currentPage <= 1 && styles.controlButtonDisabled]}
-          onPress={() => handlePageChange('prev')}
-          disabled={currentPage <= 1}
-        >
-          <Text style={styles.controlButtonText}>Previous</Text>
-        </TouchableOpacity>
-
-        <View style={styles.pageIndicator}>
-          <Text style={styles.pageText}>{currentPage} / {totalPages}</Text>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.controlButton, currentPage >= totalPages && styles.controlButtonDisabled]}
-          onPress={() => handlePageChange('next')}
-          disabled={currentPage >= totalPages}
-        >
-          <Text style={styles.controlButtonText}>Next</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>{book.title}</Text>
+        <TouchableOpacity onPress={handleShare} style={styles.headerBtn}>
+          <Text style={styles.headerBtnText}>Share</Text>
         </TouchableOpacity>
       </View>
+
+      <WebView
+        ref={webViewRef}
+        source={{ uri: pdfUrl }}
+        style={styles.webview}
+        originWhitelist={['*']}
+        javaScriptEnabled
+        domStorageEnabled
+        startInLoadingState
+        renderLoading={() => (
+          <View style={styles.webviewLoading}>
+            <ActivityIndicator size="large" color="#228B22" />
+            <Text style={styles.loadingText}>Loading PDF...</Text>
+          </View>
+        )}
+        onError={() => setError('Failed to load the document. Please try again.')}
+        onHttpError={(syntheticEvent) => {
+          const { statusCode } = syntheticEvent.nativeEvent;
+          if (statusCode === 401) setError('Session expired. Please login again.');
+          else if (statusCode === 404) setError('File not found.');
+          else setError(`Failed to load (HTTP ${statusCode})`);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -126,91 +198,103 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    backgroundColor: '#4A90E2',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  closeButton: {
-    padding: 5,
-  },
-  closeButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  bookInfo: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  bookTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  pageInfo: {
-    color: '#E8F4FD',
-    fontSize: 12,
-  },
-  readerContainer: {
+  centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  placeholderText: {
-    fontSize: 48,
-    marginBottom: 20,
-  },
-  instructionText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 10,
-    lineHeight: 24,
-  },
-  bookDetails: {
-    fontSize: 14,
-    color: '#333',
-    marginTop: 10,
-  },
-  controls: {
+  header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  controlButton: {
-    backgroundColor: '#4A90E2',
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
     paddingVertical: 12,
-    borderRadius: 8,
-    minWidth: 100,
-    alignItems: 'center',
+    backgroundColor: '#228B22',
   },
-  controlButtonDisabled: {
-    backgroundColor: '#ccc',
+  headerBtn: {
+    padding: 8,
+    minWidth: 60,
   },
-  controlButtonText: {
+  headerBtnText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',
   },
-  pageIndicator: {
-    alignItems: 'center',
-  },
-  pageText: {
+  headerTitle: {
+    flex: 1,
+    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
+    marginHorizontal: 5,
+  },
+  webview: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  webviewLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  videoContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#c00',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  closeBtn: {
+    backgroundColor: '#228B22',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  closeBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  placeholderIcon: {
+    fontSize: 64,
+    marginBottom: 15,
+  },
+  infoText: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#333',
+    marginBottom: 10,
+  },
+  infoSubtext: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 5,
+    textAlign: 'center',
+  },
+  downloadBtn: {
+    backgroundColor: '#228B22',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 20,
+  },
+  downloadBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

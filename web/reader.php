@@ -10,6 +10,17 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
 }
+
+// Check offline reading setting
+$conn = getDBConnection();
+$enable_offline_reading = 1;
+if ($conn) {
+    $result = $conn->query("SELECT setting_value FROM system_settings WHERE setting_key = 'enable_offline_reading'");
+    if ($result && $row = $result->fetch_assoc()) {
+        $enable_offline_reading = (int)$row['setting_value'];
+    }
+    $conn->close();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -44,9 +55,11 @@ if (!isset($_SESSION['user_id'])) {
             </div>
             <div class="header-right">
                 <div class="reader-controls">
+                    <?php if ($enable_offline_reading): ?>
                     <button onclick="saveForOffline()" id="offlineBtn" class="btn btn-success" title="Save for Offline Reading">
                         <i class="fas fa-cloud-download-alt"></i> <span class="offline-text">Save Offline</span>
                     </button>
+                    <?php endif; ?>
                     <button onclick="toggleFullscreen()" id="fullscreenBtn" class="btn btn-icon">
                         <i class="fas fa-expand"></i>
                     </button>
@@ -210,10 +223,39 @@ if (!isset($_SESSION['user_id'])) {
             navigator.serviceWorker.addEventListener('message', event => {
                 if (event.data.type === 'bookCached') {
                     updateOfflineButton(true);
+                    if (window.currentBook) {
+                        saveBookMetadataOffline(window.currentBook);
+                    }
                     showMessage('Book saved for offline reading!', 'success');
                 }
             });
         }
+
+        // Add offline/online listeners
+        window.addEventListener('online', updateNetworkStatus);
+        window.addEventListener('offline', updateNetworkStatus);
+
+        function updateNetworkStatus() {
+            const isOffline = !navigator.onLine;
+            let banner = document.getElementById('offlineBanner');
+            
+            if (isOffline) {
+                if (!banner) {
+                    banner = document.createElement('div');
+                    banner.id = 'offlineBanner';
+                    banner.className = 'offline-banner';
+                    banner.innerHTML = '<i class="fas fa-wifi-slash"></i> You are currently offline. Viewing cached book.';
+                    document.body.prepend(banner);
+                }
+            } else {
+                if (banner) {
+                    banner.remove();
+                }
+            }
+        }
+
+        // Run once on load
+        document.addEventListener('DOMContentLoaded', updateNetworkStatus);
     </script>
 </body>
 </html>

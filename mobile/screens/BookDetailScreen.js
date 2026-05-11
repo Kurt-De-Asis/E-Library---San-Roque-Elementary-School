@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../src/api';
 import { API_BASE_URL, COVERS_URL } from '../config/api';
 
 export default function BookDetailScreen({ route, navigation }) {
@@ -24,7 +25,7 @@ export default function BookDetailScreen({ route, navigation }) {
 
   const loadBookDetails = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/ebooks.php?action=get_book&id=${book.ebook_id}`);
+      const response = await api.get(`/ebooks.php?action=get_book&id=${book.ebook_id}`);
       if (response.data.success) {
         setBookDetails(response.data.book);
       }
@@ -41,8 +42,13 @@ export default function BookDetailScreen({ route, navigation }) {
 
   const handleDownloadBook = async () => {
     try {
-      // For now, just show an alert. In a real app, you'd handle downloading
-      Alert.alert('Download', 'Download functionality would be implemented here');
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        Alert.alert('Error', 'Please login first');
+        return;
+      }
+      const url = `${API_BASE_URL}/ebooks.php?action=download_book&id=${book.ebook_id}`;
+      Alert.alert('Download', 'Download link ready. A full download with file system support can be added via expo-file-system.');
     } catch (error) {
       console.error('Download error:', error);
     }

@@ -3194,3 +3194,19 @@ p {
     transition: width 0.3s ease;
 }
 
+
+/* Offline Banner */
+.offline-banner {
+    background-color: #f39c12;
+    color: white;
+    text-align: center;
+    padding: 10px;
+    font-weight: bold;
+    z-index: 9999;
+    position: relative;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+.offline-banner i {
+    margin-right: 8px;
+}
+

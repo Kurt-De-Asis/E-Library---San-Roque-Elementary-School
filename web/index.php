@@ -1,7 +1,6 @@
 <?php
 require_once 'api/config.php';
 
-// Prevent browser caching
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -20,7 +19,6 @@ if (!isset($_SESSION['user_id'])) {
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <script>
-        // Force unregister service worker on localhost as early as possible
         if ('serviceWorker' in navigator && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
             navigator.serviceWorker.getRegistrations().then(function(registrations) {
                 for(let registration of registrations) {
@@ -199,11 +197,9 @@ if (!isset($_SESSION['user_id'])) {
 
     <script src="js/main.js?v=<?php echo CACHE_BUSTER; ?>"></script>
     <script>
-        // Register Service Worker for offline support
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 <?php if (IS_LOCALHOST): ?>
-                // Unregister any existing service workers on localhost to avoid "Everything is Loading" issues
                 navigator.serviceWorker.getRegistrations().then(registrations => {
                     for (let registration of registrations) {
                         registration.unregister();
@@ -215,12 +211,10 @@ if (!isset($_SESSION['user_id'])) {
                     .then(registration => {
                         console.log('Service Worker registered:', registration.scope);
                         
-                        // Check for updates
                         registration.addEventListener('updatefound', () => {
                             const newWorker = registration.installing;
                             newWorker.addEventListener('statechange', () => {
                                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    // New content available, reload page
                                     if (confirm('New version available! Refresh to update?')) {
                                         window.location.reload();
                                     }

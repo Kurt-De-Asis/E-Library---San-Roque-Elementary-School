@@ -5,8 +5,9 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 
-// Import screens
 import LoginScreen from './screens/LoginScreen';
+import RegistrationScreen from './screens/RegistrationScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import HomeScreen from './screens/HomeScreen';
 import BrowseScreen from './screens/BrowseScreen';
 import CategoriesScreen from './screens/CategoriesScreen';
@@ -36,7 +37,7 @@ function TabNavigator() {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#4A90E2',
+        tabBarActiveTintColor: '#228B22',
         tabBarInactiveTintColor: 'gray',
         headerShown: false,
       })}
@@ -60,6 +61,16 @@ export default function App() {
           options={{ headerShown: false }}
         />
         <Stack.Screen
+          name="Register"
+          component={RegistrationScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
           name="MainTabs"
           component={TabNavigator}
           options={{ headerShown: false }}
@@ -72,7 +83,7 @@ export default function App() {
         <Stack.Screen
           name="Reader"
           component={ReaderScreen}
-          options={{ title: 'Reader' }}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

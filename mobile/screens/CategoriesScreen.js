@@ -8,8 +8,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
-import axios from 'axios';
-import API_BASE_URL from '../config/api';
+import api from '../src/api';
 
 export default function CategoriesScreen({ navigation }) {
   const [categories, setCategories] = useState([]);
@@ -21,7 +20,7 @@ export default function CategoriesScreen({ navigation }) {
 
   const loadCategories = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/ebooks.php?action=get_categories`);
+      const response = await api.get('/ebooks.php?action=get_categories');
       if (response.data.success) {
         setCategories(response.data.categories);
       }

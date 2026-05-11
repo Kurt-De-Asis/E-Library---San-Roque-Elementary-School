@@ -2,11 +2,36 @@
 // Database Configuration for E-Library System
 // San Roque Elementary School
 
+// CORS headers for mobile app access
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+// Handle preflight OPTIONS request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// Polyfill getallheaders() for Nginx/FastCGI
+if (!function_exists('getallheaders')) {
+    function getallheaders() {
+        $headers = [];
+        foreach ($_SERVER as $name => $value) {
+            if (substr($name, 0, 5) === 'HTTP_') {
+                $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
+            }
+        }
+        return $headers;
+    }
+}
+
 // Database credentials - use environment variables for production
-define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
-define('DB_USER', getenv('DB_USER') ?: 'root');
-define('DB_PASS', getenv('DB_PASS') ?: '');
-define('DB_NAME', getenv('DB_NAME') ?: 'elibrary_db');
+// Supports both custom (DB_HOST/DB_USER/DB_PASS/DB_NAME) and Render's MYSQL_* naming
+define('DB_HOST', getenv('DB_HOST') ?: getenv('MYSQL_HOST') ?: 'localhost');
+define('DB_USER', getenv('DB_USER') ?: getenv('MYSQL_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') ?: getenv('MYSQL_PASSWORD') ?: '');
+define('DB_NAME', getenv('DB_NAME') ?: getenv('MYSQL_DATABASE') ?: 'elibrary_db');
 
 // Site configuration
 define('SITE_NAME', getenv('SITE_NAME') ?: 'San Roque Elementary School E-Library');
@@ -82,6 +107,35 @@ function isStudent() {
 // Get current user's grade level
 function getUserGradeLevel() {
     return isset($_SESSION['grade_level']) ? $_SESSION['grade_level'] : 'n/a';
+}
+
+// Get authenticated user ID (checks Bearer token first, then session)
+function getAuthUserId() {
+    // Check Bearer token from Authorization header
+    $headers = getallheaders();
+    $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+    
+    if (preg_match('/Bearer\s+(.+)$/i', $authHeader, $matches)) {
+        $token = $matches[1];
+        $conn = getDBConnection();
+        if ($conn) {
+            $stmt = $conn->prepare("SELECT user_id FROM users WHERE api_token = ? AND is_active = 1");
+            $stmt->bind_param("s", $token);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            if ($result->num_rows === 1) {
+                $user = $result->fetch_assoc();
+                $stmt->close();
+                $conn->close();
+                return (int)$user['user_id'];
+            }
+            $stmt->close();
+            $conn->close();
+        }
+    }
+
+    // Fallback to session-based auth
+    return isLoggedIn() ? (int)$_SESSION['user_id'] : null;
 }
 
 // Sanitize input

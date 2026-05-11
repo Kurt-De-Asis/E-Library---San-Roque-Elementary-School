@@ -1,16 +1,35 @@
 services:
   - type: web
     name: elibrary
-    env: php
-    buildCommand: echo "No build needed"
-    startCommand: |
-      cp .env.example .env 2>/dev/null || true
-      apache2-foreground
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     envVars:
-      - key: PHP_VERSION
-        value: "8.2"
       - key: APP_ENV
         value: production
+      - key: DB_HOST
+        fromService:
+          type: pserv
+          name: mysql
+          property: host
+      - key: DB_USER
+        fromService:
+          type: pserv
+          name: mysql
+          property: user
+      - key: DB_PASS
+        fromService:
+          type: pserv
+          name: mysql
+          property: password
+      - key: DB_NAME
+        value: elibrary_db
+      - key: SITE_NAME
+        value: San Roque Elementary School E-Library
+    disk:
+      name: uploads
+      mountPath: /var/www/html/uploads
+      sizeGB: 1
 
   - type: pserv
     name: mysql

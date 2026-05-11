@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "E-Library Mobile",
+    "name": "San Roque E-Library",
     "slug": "elibrary-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,16 +10,25 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.elibrary.mobile"
+      "bundleIdentifier": "com.sres.elibrary",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
     },
     "android": {
-      "package": "com.elibrary.mobile"
+      "package": "com.sres.elibrary",
+      "usesCleartextTraffic": true
     },
     "web": {},
     "extra": {
       "eas": {
         "projectId": "69c3019b-849d-4251-a2a6-cb786c7f4fd8"
       }
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

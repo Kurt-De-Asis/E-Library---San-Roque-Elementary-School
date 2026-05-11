@@ -39,16 +39,18 @@ function login() {
         return;
     }
     
-    $email = sanitizeInput($_POST['email'] ?? '');
+    // Accept either email or username from mobile/web
+    $email = sanitizeInput($_POST['email'] ?? $_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     
     if (empty($email) || empty($password)) {
-        echo json_encode(['success' => false, 'message' => 'Email and password are required']);
+        echo json_encode(['success' => false, 'message' => 'Email/username and password are required']);
         return;
     }
     
-    $stmt = $conn->prepare("SELECT user_id, username, email, password_hash, full_name, user_type, grade_level, profile_image, section_id FROM users WHERE email = ? AND is_active = 1");
-    $stmt->bind_param("s", $email);
+    // Support login by email OR username
+    $stmt = $conn->prepare("SELECT user_id, username, email, password_hash, full_name, user_type, grade_level, profile_image, section_id FROM users WHERE (email = ? OR username = ?) AND is_active = 1");
+    $stmt->bind_param("ss", $email, $email);
     $stmt->execute();
     $stmt->store_result();
     
@@ -68,7 +70,14 @@ function login() {
         
         // Verify password
         if (password_verify($password, $u_password_hash)) {
-            // Set session variables
+            // Generate API token for mobile app
+            $token = bin2hex(random_bytes(32));
+            $tokenStmt = $conn->prepare("UPDATE users SET api_token = ?, last_login = NOW() WHERE user_id = ?");
+            $tokenStmt->bind_param("si", $token, $u_id);
+            $tokenStmt->execute();
+            $tokenStmt->close();
+            
+            // Set session variables for web app
             $_SESSION['user_id'] = $u_id;
             $_SESSION['username'] = $u_username;
             $_SESSION['full_name'] = $u_full_name;
@@ -78,18 +87,13 @@ function login() {
             $_SESSION['profile_image'] = $u_profile_image;
             $_SESSION['section_id'] = $u_section_id;
             
-            // Update last login
-            $updateStmt = $conn->prepare("UPDATE users SET last_login = NOW() WHERE user_id = ?");
-            $updateStmt->bind_param("i", $u_id);
-            $updateStmt->execute();
-            $updateStmt->close();
-            
             // Log activity
             logActivity($conn, $u_id, 'login', 'user', $u_id, 'User logged in');
             
             echo json_encode([
                 'success' => true,
                 'message' => 'Login successful',
+                'token' => $token,
                 'user' => [
                     'user_id' => $u_id,
                     'username' => $u_username,
@@ -180,12 +184,18 @@ function register() {
 }
 
 function logout() {
-    if (isLoggedIn()) {
-        $conn = getDBConnection();
-        if ($conn) {
-            logActivity($conn, $_SESSION['user_id'], 'logout', 'user', $_SESSION['user_id'], 'User logged out');
-            $conn->close();
-        }
+    $conn = getDBConnection();
+    $userId = getAuthUserId();
+    
+    if ($userId && $conn) {
+        // Clear API token if logging out via token (mobile app)
+        $tokenStmt = $conn->prepare("UPDATE users SET api_token = NULL WHERE user_id = ?");
+        $tokenStmt->bind_param("i", $userId);
+        $tokenStmt->execute();
+        $tokenStmt->close();
+        
+        logActivity($conn, $userId, 'logout', 'user', $userId, 'User logged out');
+        $conn->close();
     }
     
     session_destroy();
@@ -193,6 +203,7 @@ function logout() {
 }
 
 function checkSession() {
+    // Check session first (web)
     if (isLoggedIn()) {
         echo json_encode([
             'success' => true,
@@ -205,9 +216,35 @@ function checkSession() {
                 'grade_level' => $_SESSION['grade_level']
             ]
         ]);
-    } else {
-        echo json_encode(['success' => true, 'logged_in' => false]);
+        return;
     }
+    
+    // Check Bearer token (mobile)
+    $userId = getAuthUserId();
+    if ($userId) {
+        $conn = getDBConnection();
+        if ($conn) {
+            $stmt = $conn->prepare("SELECT user_id, username, full_name, user_type, grade_level FROM users WHERE user_id = ? AND is_active = 1");
+            $stmt->bind_param("i", $userId);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            if ($result->num_rows === 1) {
+                $user = $result->fetch_assoc();
+                echo json_encode([
+                    'success' => true,
+                    'logged_in' => true,
+                    'user' => $user
+                ]);
+                $stmt->close();
+                $conn->close();
+                return;
+            }
+            $stmt->close();
+            $conn->close();
+        }
+    }
+    
+    echo json_encode(['success' => true, 'logged_in' => false]);
 }
 
 // =====================================================

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,50 +6,78 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Image,
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import API_BASE_URL from '../config/api';
+import api from '../src/api';
 
 export default function LoginScreen({ navigation }) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    checkExistingToken();
+  }, []);
+
+  const checkExistingToken = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (token) {
+        const res = await api.get('/auth.php?action=check-session');
+        if (res.data.logged_in) {
+          navigation.replace('MainTabs');
+          return;
+        }
+        await AsyncStorage.multiRemove(['token', 'user']);
+      }
+    } catch { }
+    setLoading(false);
+  };
 
   const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert('Error', 'Please enter both username and password');
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter both email/username and password');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth.php`, {
-        action: 'login',
-        username,
-        password,
+      const formData = new FormData();
+      formData.append('username', email);
+      formData.append('password', password);
+
+      const response = await api.post('/auth.php?action=login', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       if (response.data.success) {
-        // Store user data
+        await AsyncStorage.setItem('token', response.data.token);
         await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
-
-        // Navigate to main app
         navigation.replace('MainTabs');
       } else {
         Alert.alert('Login Failed', response.data.message || 'Invalid credentials');
       }
     } catch (error) {
-      console.error('Login error:', error);
-      Alert.alert('Error', 'Network error. Please try again.');
+      const msg = error.response?.data?.message || error.message || 'Network error';
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#228B22" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -68,11 +96,12 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.formContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
+            placeholder="Email or Username"
+            value={email}
+            onChangeText={setEmail}
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType="email-address"
           />
 
           <TextInput
@@ -94,6 +123,20 @@ export default function LoginScreen({ navigation }) {
               {loading ? 'Logging in...' : 'Login'}
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.forgotButton}
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
+            <Text style={styles.forgotButtonText}>Forgot Password?</Text>
+          </TouchableOpacity>
+
+          <View style={styles.registerContainer}>
+            <Text style={styles.registerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+              <Text style={styles.registerLink}>Register</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -104,6 +147,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   keyboardView: {
     flex: 1,
@@ -118,7 +166,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#228B22',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -151,7 +199,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   loginButton: {
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#228B22',
     borderRadius: 8,
     paddingVertical: 15,
     alignItems: 'center',
@@ -163,6 +211,28 @@ const styles = StyleSheet.create({
   loginButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: 'bold',
+  },
+  forgotButton: {
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  forgotButtonText: {
+    color: '#228B22',
+    fontSize: 14,
+  },
+  registerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  registerText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  registerLink: {
+    color: '#228B22',
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });

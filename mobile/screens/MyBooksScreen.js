@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,22 +8,25 @@ import {
   Image,
   SafeAreaView,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import { API_BASE_URL, COVERS_URL } from '../config/api';
+import { useIsFocused } from '@react-navigation/native';
+import api from '../src/api';
+import { COVERS_URL } from '../config/api';
 
 export default function MyBooksScreen({ navigation }) {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const isFocused = useIsFocused();
 
   useEffect(() => {
-    loadMyBooks();
-  }, []);
+    if (isFocused) loadMyBooks();
+  }, [isFocused]);
 
   const loadMyBooks = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/ebooks.php?action=get_my_books`);
+      const response = await api.get('/ebooks.php?action=get_my_books');
       if (response.data.success) {
         setBooks(response.data.books);
       }
@@ -31,8 +34,14 @@ export default function MyBooksScreen({ navigation }) {
       console.error('Error loading my books:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadMyBooks();
+  }, []);
 
   const renderBookItem = ({ item }) => (
     <TouchableOpacity
@@ -109,6 +118,9 @@ export default function MyBooksScreen({ navigation }) {
           renderItem={renderBookItem}
           contentContainerStyle={styles.booksContainer}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#228B22']} />
+          }
         />
       )}
     </SafeAreaView>

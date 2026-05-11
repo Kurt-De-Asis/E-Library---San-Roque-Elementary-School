@@ -466,6 +466,118 @@ INSERT INTO `users` (`user_id`, `username`, `email`, `password_hash`, `full_name
 --
 ALTER TABLE `ebooks` ADD FULLTEXT KEY `idx_search` (`title`,`author`,`description`);
 COMMIT;
+-- GitHub Books - To be added to elibrary_db
+-- These are the 27 new books pulled from GitHub
+
+-- Book 1
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 1', 'Unknown', NULL, 'GitHub imported book', '69a90c1b9cf3a_1772686363.png', '69a90c1b9cf3a_1772686363.pdf', 'pdf', 3201426, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 2
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Video 1', 'Unknown', NULL, 'GitHub imported video', '69af48dbc0aa4_1773095131.png', '69af48dbc0ff0_1773095131.mp4', 'mp4', 11302542, 'Reference', NULL, 'all', 'video', 'English', 1, 1, 1, NOW());
+
+-- Book 3
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Video 2', 'Unknown', NULL, 'GitHub imported video', '69af4d61ea690_1773096289.png', '69af4d61ea99c_1773096289.mp4', 'mp4', 11302542, 'Reference', NULL, 'all', 'video', 'English', 1, 1, 1, NOW());
+
+-- Book 4
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Video 3', 'Unknown', NULL, 'GitHub imported video', '69af4f1f1b7d9_1773096735.png', '69af4f1f1bd42_1773096735.mp4', 'mp4', 11302542, 'Reference', NULL, 'all', 'video', 'English', 1, 1, 1, NOW());
+
+-- Book 5
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 2', 'Unknown', NULL, 'GitHub imported book', '69af509acaf85_1773097114.png', '69af509acaf85_1773097114.pdf', 'pdf', 180120, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 6
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 3', 'Unknown', NULL, 'GitHub imported book', '69af5167d7c96_1773097319.png', '69af5167d7c96_1773097319.pdf', 'pdf', 7050317, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 7
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 4', 'Unknown', NULL, 'GitHub imported book', '69af5efeaaaf3_1773100798.png', '69af5efeaaaf3_1773100798.pdf', 'pdf', 7050317, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 8
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 5', 'Unknown', NULL, 'GitHub imported book', '69aff2b76dcde_1773138615.png', '69aff2b76dcde_1773138615.pdf', 'pdf', 180120, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 9
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 6', 'Unknown', NULL, 'GitHub imported book', '69b2c11c6bf34_1773322524.png', '69b2c11c6bf34_1773322524.pdf', 'pdf', 106974, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 10
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 7', 'Unknown', NULL, 'GitHub imported book', '69b2c2a94b53c_1773322921.png', '69b2c2a94b53c_1773322921.pdf', 'pdf', 106974, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 11
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Video 4', 'Unknown', NULL, 'GitHub imported video', '69b2f48618664_1773335686.png', '69b2c34e03c61_1773323086.mp4', 'mp4', 11302542, 'Reference', NULL, 'all', 'video', 'English', 1, 1, 1, NOW());
+
+-- Book 12
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 8', 'Unknown', NULL, 'GitHub imported book', '69d98f346ab39_1775865652.png', '69d98f346af6e_1775865652.pdf', 'pdf', 3201426, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 13
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 9', 'Unknown', NULL, 'GitHub imported book', '69d98f77824b7_1775865719.png', '69d98f77835f1_1775865719.pdf', 'pdf', 3201426, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 14
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 10', 'Unknown', NULL, 'GitHub imported book', '69d99050ae1f8_1775865936.png', '69d99050af02c_1775865936.pdf', 'pdf', 4329322, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 15
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 11', 'Unknown', NULL, 'GitHub imported book', '69d9fb0df2d16_1775893261.png', '69d9fb0df3e22_1775893261.pdf', 'pdf', 9588885, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 16
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 12', 'Unknown', NULL, 'GitHub imported book', '69da0607eba9c_1775896071.png', '69da086e2d717_1775896686.pdf', 'pdf', 2567150, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 17
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 13', 'Unknown', NULL, 'GitHub imported book', '69da148ddbeba_1775899789.png', '69da148ddca60_1775899789.pdf', 'pdf', 9588885, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 18
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 14', 'Unknown', NULL, 'GitHub imported book', '69da070530268_1775896325.png', '69da1632b8388_1775900210.pdf', 'pdf', 5854474, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 19
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 15', 'Unknown', NULL, 'GitHub imported book', '69e249bf35e0b_1776437695.jpg', '69e24b0c71853_1776438028.pdf', 'pdf', 4501939, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 20
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 16', 'Unknown', NULL, 'GitHub imported book', '69e24b0c715dd_1776438028.jpg', '69e24c4919075_1776438345.pdf', 'pdf', 1992949, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 21
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 17', 'Unknown', NULL, 'GitHub imported book', '69e24c4918bf5_1776438345.jpg', '69e24fcadcd37_1776439242.pdf', 'pdf', 2147503, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 22
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 18', 'Unknown', NULL, 'GitHub imported book', '69e2ca8b53d91_1776470667.png', '69e2ca8b559cd_1776470667.pdf', 'pdf', 5854474, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 23
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 19', 'Unknown', NULL, 'GitHub imported book', '69e2cd9559baf_1776471445.png', '69e2cd955b3e0_1776471445.pdf', 'pdf', 5396910, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 24
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 20', 'Unknown', NULL, 'GitHub imported book', '69e2cf3662051_1776471862.png', '69e2cf3664589_1776471862.pdf', 'pdf', 3469970, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 25
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 21', 'Unknown', NULL, 'GitHub imported book', '69e2d0c05a0ff_1776472256.png', '69e2d0c05bd8f_1776472256.pdf', 'pdf', 4816867, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 26
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Book 22', 'Unknown', NULL, 'GitHub imported book', '69e2d25f49d18_1776472671.png', '69e2d25f4b3f6_1776472671.pdf', 'pdf', 6867801, 'Reference', NULL, 'all', 'book', 'English', 1, 1, 1, NOW());
+
+-- Book 27
+INSERT INTO `ebooks` (`title`, `author`, `isbn`, `description`, `cover_image`, `file_path`, `file_type`, `file_size`, `category`, `subject`, `grade_level`, `content_type`, `language`, `is_active`, `uploaded_by`, `is_approved`, `created_at`) VALUES
+('GitHub Video 5', 'Unknown', NULL, 'GitHub imported video', '69eb897e06e39_1777043838.png', '69eb897e0a863_1777043838.mp4', 'mp4', 7838994, 'Reference', NULL, 'all', 'video', 'English', 1, 1, 1, NOW());
+
+COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;

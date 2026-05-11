@@ -831,3 +831,107 @@ async function loadDashboardData() {
     // Show home section by default
     showSection('home');
 }
+
+// Offline detection and UI
+window.addEventListener('online', updateNetworkStatus);
+window.addEventListener('offline', updateNetworkStatus);
+
+function updateNetworkStatus() {
+    const isOffline = !navigator.onLine;
+    let banner = document.getElementById('offlineBanner');
+    
+    if (isOffline) {
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'offlineBanner';
+            banner.className = 'offline-banner';
+            banner.innerHTML = '<i class="fas fa-wifi-slash"></i> You are currently offline. <a href="#" onclick="showOfflineBooks(); return false;" style="color: white; text-decoration: underline;">View downloaded books</a>';
+            document.body.prepend(banner);
+        }
+    } else {
+        if (banner) {
+            banner.remove();
+        }
+        
+        // Remove offline books container if visible
+        const offlineContainer = document.getElementById('offlineBooksContainer');
+        if (offlineContainer) {
+            offlineContainer.style.display = 'none';
+        }
+    }
+}
+
+function showOfflineBooks() {
+    // Hide standard grid and show offline books
+    const mainGrid = document.querySelector('.books-grid');
+    if (mainGrid) mainGrid.style.display = 'none';
+    
+    const categories = document.querySelector('.categories-container');
+    if (categories) categories.style.display = 'none';
+    
+    const filters = document.querySelector('.filters-section');
+    if (filters) filters.style.display = 'none';
+    
+    const pagination = document.getElementById('pagination');
+    if (pagination) pagination.style.display = 'none';
+    
+    // Change section title
+    const sectionTitle = document.getElementById('sectionTitle');
+    if (sectionTitle) sectionTitle.textContent = 'Saved Offline Books';
+    
+    let container = document.getElementById('offlineBooksContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'offlineBooksContainer';
+        container.className = 'books-grid';
+        
+        const mainContent = document.querySelector('main.container');
+        if (mainContent) mainContent.appendChild(container);
+    }
+    
+    container.style.display = 'grid';
+    container.innerHTML = '';
+    
+    const offlineBooks = JSON.parse(localStorage.getItem('offlineBooks') || '{}');
+    const bookKeys = Object.keys(offlineBooks);
+    
+    if (bookKeys.length === 0) {
+        container.innerHTML = '<div class="no-results" style="grid-column: 1 / -1; text-align: center; padding: 3rem;"><h3>No books saved for offline reading.</h3></div>';
+        return;
+    }
+    
+    bookKeys.forEach(key => {
+        const book = offlineBooks[key];
+        const coverImage = book.cover_image ? `uploads/covers/${book.cover_image}` : 'assets/images/default-cover.png';
+        
+        const bookCard = document.createElement('div');
+        bookCard.className = 'book-card';
+        bookCard.innerHTML = `
+            <div class="book-cover">
+                <img src="${coverImage}" alt="${book.title}" onerror="this.src='assets/images/default-cover.png'">
+            </div>
+            <div class="book-info">
+                <span class="category-badge">${book.category || 'Book'}</span>
+                <h3 class="book-title">${book.title}</h3>
+                <p class="book-author">By: ${book.author || 'Unknown'}</p>
+                <div class="book-actions">
+                    <a href="reader.php?id=${book.ebook_id}" class="btn btn-primary btn-sm"><i class="fas fa-book-reader"></i> Read</a>
+                    <button onclick="removeOfflineBook(${book.ebook_id})" class="btn btn-danger btn-sm" title="Remove Offline"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        `;
+        container.appendChild(bookCard);
+    });
+}
+
+function removeOfflineBook(bookId) {
+    if (confirm('Remove this book from offline storage?')) {
+        let offlineBooks = JSON.parse(localStorage.getItem('offlineBooks') || '{}');
+        delete offlineBooks[bookId];
+        localStorage.setItem('offlineBooks', JSON.stringify(offlineBooks));
+        showOfflineBooks();
+    }
+}
+
+// Run once on load
+document.addEventListener('DOMContentLoaded', updateNetworkStatus);
