@@ -14,17 +14,49 @@ header('Expires: 0');
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <script>
-        if ('serviceWorker' in navigator && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                for(let registration of registrations) {
-                    registration.unregister();
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        for(let registration of registrations) {
+                            registration.unregister();
+                        }
+                    });
+                } else {
+                    navigator.serviceWorker.register('sw.js?v=<?php echo APP_VERSION; ?>')
+                        .then(registration => {
+                            if (registration.waiting && navigator.serviceWorker.controller) {
+                                registration.waiting.postMessage({ action: 'skipWaiting' });
+                                window.location.reload();
+                            }
+                            registration.addEventListener('updatefound', () => {
+                                const newWorker = registration.installing;
+                                newWorker.addEventListener('statechange', () => {
+                                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                        window.location.reload();
+                                    }
+                                });
+                            });
+                        })
+                        .catch(error => {
+                            console.log('Service Worker registration failed:', error);
+                        });
                 }
             });
         }
     </script>
+    <meta name="theme-color" content="#228B22">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="SRES E-Library">
     <title>Login - San Roque Elementary School E-Library</title>
+    <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="shortcut icon" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-icon" sizes="192x192" href="assets/icons/icon-192x192.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-startup-image" href="assets/icons/apple-touch-icon.png?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="css/style.css?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>

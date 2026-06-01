@@ -103,7 +103,14 @@ async function handleLogin(e) {
         }
     } catch (error) {
         console.error('Login error:', error);
-        showMessage(messageDiv, 'An error occurred. Please try again.', 'error');
+        let errorMsg = 'An error occurred. Please try again.';
+        try {
+            if (typeof response !== 'undefined') {
+                const text = await response.text();
+                console.error('Response body:', text.substring(0, 500));
+            }
+        } catch(e) {}
+        showMessage(messageDiv, errorMsg, 'error');
     } finally {
         submitButton.disabled = false;
         submitButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
@@ -244,6 +251,12 @@ async function logout() {
             // Clear any cached data
             localStorage.clear();
             sessionStorage.clear();
+
+            // Clear all Service Worker caches
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map(key => caches.delete(key)));
+            }
 
             // Redirect to login
             window.location.href = 'login.php';
@@ -411,12 +424,7 @@ async function sendOTP() {
         if (result.success) {
             forgotPasswordEmail = email;
             
-            // For development: show OTP if email couldn't be sent
-            if (result.debug_otp) {
-                showMessage(messageDiv, `Your OTP code is: <strong>${result.debug_otp}</strong><br><small>(Email not configured on this server)</small>`, 'success');
-            } else {
-                showMessage(messageDiv, 'OTP sent to your email!', 'success');
-            }
+            showMessage(messageDiv, 'OTP sent to your email!', 'success');
             
             // Move to step 2 after short delay
             setTimeout(() => {

@@ -853,6 +853,22 @@ function updateNetworkStatus() {
             banner.remove();
         }
         
+        // Restore normal content that showOfflineBooks() may have hidden
+        const mainGrid = document.querySelector('.books-grid');
+        if (mainGrid) mainGrid.style.display = '';
+        
+        const categories = document.querySelector('.categories-container');
+        if (categories) categories.style.display = '';
+        
+        const filters = document.querySelector('.filters-section');
+        if (filters) filters.style.display = '';
+        
+        const pagination = document.getElementById('pagination');
+        if (pagination) pagination.style.display = '';
+        
+        const sectionTitle = document.getElementById('sectionTitle');
+        if (sectionTitle) sectionTitle.textContent = 'Library';
+        
         // Remove offline books container if visible
         const offlineContainer = document.getElementById('offlineBooksContainer');
         if (offlineContainer) {

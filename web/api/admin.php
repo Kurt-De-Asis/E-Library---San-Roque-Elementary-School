@@ -160,6 +160,7 @@ function getUsers() {
     $users = [];
     
     while ($row = $result->fetch_assoc()) {
+        $row['is_active'] = (int)$row['is_active'];
         $users[] = $row;
     }
     

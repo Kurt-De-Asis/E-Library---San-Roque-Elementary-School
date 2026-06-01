@@ -25,8 +25,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Check authentication
     const sessionCheck = await checkSession();
     if (!sessionCheck.logged_in) {
-        window.location.href = 'login.php';
-        return;
+        // If offline and book is saved locally, allow reading without session
+        const offlineBooks = JSON.parse(localStorage.getItem('offlineBooks') || '{}');
+        if (!offlineBooks[bookId]) {
+            window.location.href = 'login.php';
+            return;
+        }
+        console.log('Offline mode: reading cached book without session');
     }
 
     // Load book
@@ -49,6 +54,21 @@ function initializeReader() {
 
     // Auto-save reading progress
     setInterval(saveReadingProgress, 30000); // Save every 30 seconds
+
+    // Orientation change re-render
+    window.addEventListener('orientationchange', function() {
+        setTimeout(function() {
+            if (pdfDoc) {
+                renderPage(currentPage);
+            }
+        }, 300);
+    });
+
+    window.addEventListener('resize', function() {
+        if (document.fullscreenElement && pdfDoc) {
+            renderPage(currentPage);
+        }
+    });
 }
 
 // Load book details and content
@@ -70,20 +90,30 @@ async function loadBook(bookId) {
             }
         }
 
-        // Load book details
-        const response = await fetch(`api/ebooks.php?action=get_book&id=${bookId}`);
-        
-        if (!response.ok) {
-            throw new Error('Failed to connect to server');
-        }
-        
-        const result = await response.json();
-
-        if (!result.success) {
-            throw new Error(result.message || 'Failed to load book');
+        // Load book details - try API first, fall back to localStorage for offline
+        let response;
+        try {
+            response = await fetch(`api/ebooks.php?action=get_book&id=${bookId}`);
+        } catch (e) {
+            response = null;
         }
 
-        currentBook = result.book;
+        if (response && response.ok) {
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.message || 'Failed to load book');
+            }
+            currentBook = result.book;
+        } else {
+            const offlineBooks = JSON.parse(localStorage.getItem('offlineBooks') || '{}');
+            const offlineBook = offlineBooks[bookId];
+            if (offlineBook) {
+                currentBook = offlineBook;
+                showMessage('You are viewing a saved offline copy of this book.', 'info');
+            } else {
+                throw new Error('Book not available offline. Please connect to the internet and try again.');
+            }
+        }
 
         // Update UI
         updateBookInfo();
@@ -240,13 +270,39 @@ async function loadVideo(filePath) {
     officeViewer.style.display = 'none';
     videoViewer.style.display = 'block';
 
-    // Hide unnecessary toolbar items
     const zoomControls = document.querySelector('.zoom-controls');
     const pagination = document.querySelector('.reader-navigation');
     if (zoomControls) zoomControls.style.display = 'none';
     if (pagination) pagination.style.display = 'none';
 
-    video.src = filePath;
+    // Pre-check the video source URL (skip when offline — cached video still works)
+    var videoUrl = 'api/serve.php?id=' + currentBook.ebook_id;
+    if (navigator.onLine) {
+        try {
+            var headResp = await fetch(videoUrl, { method: 'HEAD' });
+            if (!headResp.ok) {
+                console.warn('Video HEAD check returned ' + headResp.status + ', trying anyway');
+            } else {
+                var contentType = headResp.headers.get('Content-Type');
+                if (contentType && !contentType.includes('video') && !contentType.includes('octet')) {
+                    console.warn('Unexpected Content-Type:', contentType);
+                }
+            }
+        } catch (e) {
+            console.warn('Video HEAD check failed (' + e.message + '), trying anyway');
+        }
+    }
+
+    video.src = videoUrl;
+    video.onerror = function() {
+        var errCode = video.error ? video.error.code : '?';
+        var errMsg = video.error ? video.error.message : 'Unknown error';
+        fetch(videoUrl).then(function(r) {
+            showError('Video failed (code ' + errCode + '). Server returned HTTP ' + r.status + '. Try downloading the file instead.');
+        }).catch(function() {
+            showError('Video failed (code ' + errCode + ': ' + errMsg + '). Network may be blocking the connection.');
+        });
+    };
     video.load();
     
     totalPages = 1;
@@ -294,12 +350,28 @@ async function renderPage(pageNum) {
         
         // Auto-fit scale on first render if scale is 1
         if (pageNum === currentPage && scale === 1) {
-            const readingArea = document.querySelector('.reading-area');
-            const containerWidth = readingArea ? readingArea.clientWidth : 0;
-            const viewport1 = page.getViewport({ scale: 1 });
+            var isFullscreen = document.fullscreenElement || document.body.classList.contains('reader-fullscreen-active');
+            var containerWidth;
+            var containerHeight;
+
+            if (isFullscreen) {
+                containerWidth = window.innerWidth;
+                containerHeight = window.innerHeight;
+            } else {
+                var readingArea = document.querySelector('.reading-area');
+                containerWidth = readingArea ? readingArea.clientWidth : 0;
+                containerHeight = readingArea ? readingArea.clientHeight : 0;
+            }
+
+            var viewport1 = page.getViewport({ scale: 1 });
             
             if (containerWidth > 0 && viewport1.width > 0) {
-                scale = (containerWidth - 80) / viewport1.width;
+                scale = (containerWidth - 40) / viewport1.width;
+                // Also constrain by height
+                if (containerHeight > 0 && viewport1.height > 0) {
+                    var heightScale = (containerHeight - 40) / viewport1.height;
+                    if (heightScale < scale) scale = heightScale;
+                }
             } else {
                 scale = 1;
             }
@@ -312,10 +384,14 @@ async function renderPage(pageNum) {
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
 
+        const dpr = window.devicePixelRatio || 1;
         const viewport = page.getViewport({ scale: scale });
 
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+        canvas.width = viewport.width * dpr;
+        canvas.height = viewport.height * dpr;
+        canvas.style.width = viewport.width + 'px';
+        canvas.style.height = viewport.height + 'px';
+        context.scale(dpr, dpr);
 
         const renderContext = {
             canvasContext: context,
@@ -346,7 +422,6 @@ function updatePageControls() {
     const nextBtn = document.getElementById('nextBtn');
     const readerPrevBtn = document.getElementById('readerPrevBtn');
     const readerNextBtn = document.getElementById('readerNextBtn');
-
     if (currentPageInput) currentPageInput.value = currentPage;
     if (totalPagesElement) totalPagesElement.textContent = totalPages;
 
@@ -442,6 +517,7 @@ function initializeNavigation() {
     if (prevBtn) prevBtn.addEventListener('click', prevPage);
     if (nextBtn) nextBtn.addEventListener('click', nextPage);
     if (currentPageInput) currentPageInput.addEventListener('change', (e) => goToPage(e.target.value));
+
 }
 
 // Initialize zoom controls
@@ -510,65 +586,22 @@ function handleKeyboard(e) {
 function toggleFullscreen() {
     const readerContent = document.querySelector('.reader-content');
     const body = document.body;
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
 
-    if (!document.fullscreenElement) {
-        // Enter fullscreen mode
-        readerContent.requestFullscreen().catch(err => {
-            console.error('Error attempting to enable fullscreen:', err);
-        });
-
-        // Add auto-fill class to make content fill screen
+    if (!body.classList.contains('reader-fullscreen-active')) {
         body.classList.add('reader-fullscreen-active');
         readerContent.classList.add('auto-fill');
-
-        // Update button icon
-        const fullscreenBtn = document.getElementById('fullscreenBtn');
         if (fullscreenBtn) {
             fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
         }
     } else {
-        // Exit fullscreen mode
-        document.exitFullscreen();
-
-        // Remove auto-fill class
         body.classList.remove('reader-fullscreen-active');
         readerContent.classList.remove('auto-fill');
-
-        // Update button icon
-        const fullscreenBtn = document.getElementById('fullscreenBtn');
         if (fullscreenBtn) {
             fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
         }
     }
 }
-
-// Handle fullscreen change events
-document.addEventListener('fullscreenchange', () => {
-    const readerContent = document.querySelector('.reader-content');
-    const body = document.body;
-    const fullscreenBtn = document.getElementById('fullscreenBtn');
-
-    console.log('Fullscreen change detected');
-    console.log('document.fullscreenElement:', document.fullscreenElement);
-
-    if (document.fullscreenElement) {
-        console.log('Entering fullscreen');
-        // We are in fullscreen
-        body.classList.add('reader-fullscreen-active');
-        readerContent.classList.add('auto-fill');
-        if (fullscreenBtn) {
-            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
-        }
-    } else {
-        console.log('Exiting fullscreen');
-        // We are not in fullscreen
-        body.classList.remove('reader-fullscreen-active');
-        readerContent.classList.remove('auto-fill');
-        if (fullscreenBtn) {
-            fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
-        }
-    }
-});
 
 // Check auto-fill mode
 function checkAutoFillMode() {
@@ -596,12 +629,6 @@ function enableAutoFill() {
             fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
         }
 
-        // Request fullscreen
-        if (!document.fullscreenElement) {
-            readerContent.requestFullscreen().catch(err => {
-                console.error('Error attempting to enable fullscreen:', err);
-            });
-        }
     }
 }
 
@@ -619,11 +646,6 @@ function disableAutoFill() {
         // Update fullscreen button icon
         if (fullscreenBtn) {
             fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
-        }
-
-        // Exit fullscreen
-        if (document.fullscreenElement) {
-            document.exitFullscreen();
         }
     }
 }
@@ -745,7 +767,9 @@ async function loadReadingProgress() {
             currentPage = result.progress.last_page || 1;
             readingProgress = result.progress.progress_percentage || 0;
             updatePageControls();
-            renderPage(currentPage);
+            if (pdfDoc) {
+                renderPage(currentPage);
+            }
         }
     } catch (error) {
         console.error('Error loading reading progress:', error);
@@ -893,13 +917,16 @@ async function deleteBookmark(bookmarkId) {
 
 // Utility functions
 function goBack() {
-    window.history.back();
+    if (navigator.onLine) {
+        window.location.href = 'index.php';
+    } else {
+        window.location.href = 'offline.html';
+    }
 }
 
 async function downloadBook() {
     if (!currentBook) return;
 
-    // Check if download is allowed
     const contentType = currentBook.content_type || 'book';
     if (contentType === 'book') {
         showMessage('Download is not available for this content', 'error');
@@ -907,17 +934,14 @@ async function downloadBook() {
     }
 
     try {
-        // Get file extension from file_path
-        const filePath = currentBook.file_path || '';
-        const fileExt = filePath.split('.').pop().toLowerCase() || 'pdf';
+        // Log download asynchronously (don't wait for response)
+        fetch(`api/ebooks.php?action=log_download&id=${currentBook.ebook_id}`).catch(() => {});
 
-        // Use direct link for download
-        const downloadUrl = `api/ebooks.php?action=download_book&id=${currentBook.ebook_id}`;
+        // Use serve.php with download=1 for chunked streaming (no PHP timeout)
+        const downloadUrl = `api/serve.php?id=${currentBook.ebook_id}&download=1`;
 
-        // Create a link and click it
         const a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = currentBook.title.replace(/[^a-zA-Z0-9\-\_\.]/g, '_') + '.' + fileExt;
         a.target = '_blank';
         document.body.appendChild(a);
         a.click();
@@ -1069,7 +1093,12 @@ async function saveForOffline() {
         return;
     }
 
-    const bookUrl = window.location.origin + '/e-library/web/uploads/books/' + filePath;
+    const basePath = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+    const fileExt = filePath.split('.').pop().toLowerCase();
+    const isVideo = ['mp4', 'webm', 'ogg'].includes(fileExt);
+    const bookUrl = isVideo
+        ? basePath + 'api/serve.php?id=' + currentBook.ebook_id
+        : basePath + 'uploads/books/' + filePath;
 
     // Check if Service Worker is available
     if (!('serviceWorker' in navigator)) {
@@ -1092,6 +1121,21 @@ async function saveForOffline() {
         offlineBtn.disabled = true;
         offlineBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span class="offline-text">Saving...</span>';
 
+        // Save metadata to localStorage immediately (ensures offline page shows it)
+        saveBookMetadataOffline(currentBook);
+
+        // Cache book metadata API response for offline access
+        try {
+            const apiResponse = await fetch(`api/ebooks.php?action=get_book&id=${currentBook.ebook_id}`);
+            if (apiResponse.ok) {
+                const apiCache = await caches.open('elibrary-books-v4');
+                const apiRequest = new Request(`api/ebooks.php?action=get_book&id=${currentBook.ebook_id}`);
+                await apiCache.put(apiRequest, apiResponse);
+            }
+        } catch (e) {
+            console.warn('Failed to cache book metadata for offline:', e);
+        }
+
         // Send message to Service Worker to cache the book
         const registration = await navigator.serviceWorker.ready;
         if (registration.active) {
@@ -1100,11 +1144,19 @@ async function saveForOffline() {
                 bookUrl: bookUrl,
                 bookId: currentBook.ebook_id
             });
+
+            // Timeout to prevent hanging on "Saving..." (e.g., large video files)
+            const SW_TIMEOUT = 60000;
+            window.__offlineTimeout = setTimeout(() => {
+                window.__offlineTimeout = null;
+                updateOfflineButton(false);
+                showMessage('Offline save timed out. The file may be too large.', 'error');
+            }, SW_TIMEOUT);
         } else {
             // Fallback if worker not active yet
             const response = await fetch(bookUrl);
             if (response.ok) {
-                const cache = await caches.open('elibrary-books-v1');
+                const cache = await caches.open('elibrary-books-v4');
                 await cache.put(bookUrl, response);
                 saveBookMetadataOffline(currentBook);
                 updateOfflineButton(true);
@@ -1157,33 +1209,14 @@ function saveBookMetadataOffline(book) {
     }
 }
 
-// Check if current book is cached
+// Check if current book is saved offline (localStorage only)
 async function checkIfBookCached() {
     if (!currentBook || !currentBook.file_path) return;
 
     try {
-        // Check localStorage first
         const offlineBooks = JSON.parse(localStorage.getItem('offlineBooks') || '{}');
         if (offlineBooks[currentBook.ebook_id]) {
             updateOfflineButton(true);
-            return;
-        }
-
-        // Also check with Service Worker
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            const messageChannel = new MessageChannel();
-            messageChannel.port1.onmessage = (event) => {
-                const cachedUrls = event.data;
-                const bookUrl = '/e-library/web/uploads/books/' + currentBook.file_path;
-                if (cachedUrls.some(url => url.includes(bookUrl))) {
-                    updateOfflineButton(true);
-                }
-            };
-
-            navigator.serviceWorker.controller.postMessage(
-                { action: 'getCachedBooks' },
-                [messageChannel.port2]
-            );
         }
     } catch (error) {
         console.error('Error checking cache:', error);

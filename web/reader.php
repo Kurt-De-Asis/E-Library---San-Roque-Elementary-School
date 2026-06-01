@@ -30,11 +30,18 @@ if ($conn) {
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <meta name="theme-color" content="#4A90E2">
+    <meta name="theme-color" content="#228B22">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="SRES E-Library Reader">
     <title>E-Book Reader - San Roque Elementary School E-Library</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="shortcut icon" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-icon" sizes="192x192" href="assets/icons/icon-192x192.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-startup-image" href="assets/icons/apple-touch-icon.png?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="css/style.css?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- PDF.js Library -->
@@ -169,10 +176,7 @@ if ($conn) {
                 </div>
             </div>
         </div>
-    </main>
-
-    <!-- Reading Progress Bar -->
-    <div class="reading-progress">
+        <div class="reading-progress">
         <div id="progressBar" class="progress-bar"></div>
     </div>
 
@@ -186,6 +190,12 @@ if ($conn) {
             <i class="fas fa-plus"></i> Add Bookmark
         </button>
     </div>
+
+    <!-- Exit Fullscreen Button -->
+    <button id="exitFullscreenBtn" class="exit-fullscreen-btn" onclick="toggleFullscreen()" title="Exit Fullscreen">
+        <i class="fas fa-times"></i>
+    </button>
+</main>
 
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay">
@@ -213,7 +223,18 @@ if ($conn) {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js?v=<?php echo APP_VERSION; ?>')
                 .then(registration => {
-                    console.log('Service Worker registered');
+                    if (registration.waiting && navigator.serviceWorker.controller) {
+                        registration.waiting.postMessage({ action: 'skipWaiting' });
+                        window.location.reload();
+                    }
+                    registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                window.location.reload();
+                            }
+                        });
+                    });
                 })
                 .catch(error => {
                     console.log('Service Worker registration failed:', error);
@@ -221,12 +242,20 @@ if ($conn) {
 
             // Listen for messages from Service Worker
             navigator.serviceWorker.addEventListener('message', event => {
+                // Clear offline save timeout if set
+                if (window.__offlineTimeout) {
+                    clearTimeout(window.__offlineTimeout);
+                    window.__offlineTimeout = null;
+                }
                 if (event.data.type === 'bookCached') {
                     updateOfflineButton(true);
                     if (window.currentBook) {
                         saveBookMetadataOffline(window.currentBook);
                     }
                     showMessage('Book saved for offline reading!', 'success');
+                } else if (event.data.type === 'bookCacheFailed') {
+                    updateOfflineButton(false);
+                    showMessage('Failed to save book for offline reading. Please try again.', 'error');
                 }
             });
         }

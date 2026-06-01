@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 
+while (ob_get_level()) ob_end_clean();
 header('Content-Type: application/json');
 
 $action = isset($_GET['action']) ? $_GET['action'] : '';
@@ -39,6 +40,13 @@ function login() {
         return;
     }
     
+    // Auto-repair database if tables are missing (handles InfinityFree DB resets)
+    try {
+        ensureDatabaseSetup($conn);
+    } catch (Exception $e) {
+        error_log("Database auto-setup failed: " . $e->getMessage());
+    }
+    
     // Accept either email or username from mobile/web
     $email = sanitizeInput($_POST['email'] ?? $_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -49,10 +57,21 @@ function login() {
     }
     
     // Support login by email OR username
-    $stmt = $conn->prepare("SELECT user_id, username, email, password_hash, full_name, user_type, grade_level, profile_image, section_id FROM users WHERE (email = ? OR username = ?) AND is_active = 1");
-    $stmt->bind_param("ss", $email, $email);
-    $stmt->execute();
-    $stmt->store_result();
+    try {
+        $stmt = $conn->prepare("SELECT user_id, username, email, password_hash, full_name, user_type, grade_level, profile_image, section_id FROM users WHERE (email = ? OR username = ?) AND is_active = 1");
+        if (!$stmt) {
+            echo json_encode(['success' => false, 'message' => 'Database error, please try again']);
+            return;
+        }
+        $stmt->bind_param("ss", $email, $email);
+        $stmt->execute();
+        $stmt->store_result();
+    } catch (Exception $e) {
+        error_log("Login query failed: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'An error occurred. Please try again.']);
+        $conn->close();
+        return;
+    }
     
     if ($stmt->num_rows === 1) {
         $u_id = null;
@@ -72,10 +91,17 @@ function login() {
         if (password_verify($password, $u_password_hash)) {
             // Generate API token for mobile app
             $token = bin2hex(random_bytes(32));
-            $tokenStmt = $conn->prepare("UPDATE users SET api_token = ?, last_login = NOW() WHERE user_id = ?");
-            $tokenStmt->bind_param("si", $token, $u_id);
-            $tokenStmt->execute();
-            $tokenStmt->close();
+            try {
+                $tokenStmt = $conn->prepare("UPDATE users SET api_token = ?, last_login = NOW() WHERE user_id = ?");
+                if ($tokenStmt) {
+                    $tokenStmt->bind_param("si", $token, $u_id);
+                    $tokenStmt->execute();
+                    $tokenStmt->close();
+                }
+            } catch (Exception $e) {
+                error_log("Token update failed: " . $e->getMessage());
+                $token = null;
+            }
             
             // Set session variables for web app
             $_SESSION['user_id'] = $u_id;
@@ -139,47 +165,64 @@ function register() {
     }
     
     // Check if username or email already exists
-    $checkStmt = $conn->prepare("SELECT user_id FROM users WHERE username = ? OR email = ?");
-    $checkStmt->bind_param("ss", $username, $email);
-    $checkStmt->execute();
-    $checkResult = $checkStmt->get_result();
-    
-    if ($checkResult->num_rows > 0) {
-        echo json_encode(['success' => false, 'message' => 'Username or email already exists']);
+    try {
+        $checkStmt = $conn->prepare("SELECT user_id FROM users WHERE username = ? OR email = ?");
+        if (!$checkStmt) {
+            echo json_encode(['success' => false, 'message' => 'Database error, please try again']);
+            $conn->close();
+            return;
+        }
+        $checkStmt->bind_param("ss", $username, $email);
+        $checkStmt->execute();
+        $checkResult = $checkStmt->get_result();
+        
+        if ($checkResult->num_rows > 0) {
+            echo json_encode(['success' => false, 'message' => 'Username or email already exists']);
+            $checkStmt->close();
+            $conn->close();
+            return;
+        }
         $checkStmt->close();
+    } catch (Exception $e) {
+        error_log("Register check query failed: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'An error occurred. Please try again.']);
         $conn->close();
         return;
     }
-    $checkStmt->close();
     
     // Hash password
     $password_hash = password_hash($password, PASSWORD_DEFAULT);
     
     // Insert new user
-    if ($section_id !== null) {
-        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, full_name, user_type, grade_level, section_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssssssi", $username, $email, $password_hash, $full_name, $user_type, $grade_level, $section_id);
-    } else {
-        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, full_name, user_type, grade_level, section_id) VALUES (?, ?, ?, ?, ?, ?, NULL)");
-        $stmt->bind_param("ssssss", $username, $email, $password_hash, $full_name, $user_type, $grade_level);
-    }
-    
-    if ($stmt->execute()) {
-        $user_id = $stmt->insert_id;
+    try {
+        if ($section_id !== null) {
+            $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, full_name, user_type, grade_level, section_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssssssi", $username, $email, $password_hash, $full_name, $user_type, $grade_level, $section_id);
+        } else {
+            $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, full_name, user_type, grade_level, section_id) VALUES (?, ?, ?, ?, ?, ?, NULL)");
+            $stmt->bind_param("ssssss", $username, $email, $password_hash, $full_name, $user_type, $grade_level);
+        }
         
-        // Log activity
-        logActivity($conn, $user_id, 'register', 'user', $user_id, 'New user registered');
+        if ($stmt->execute()) {
+            $user_id = $stmt->insert_id;
+            
+            // Log activity
+            logActivity($conn, $user_id, 'register', 'user', $user_id, 'New user registered');
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Registration successful. Please login.',
+                'user_id' => $user_id
+            ]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Registration failed. Please try again.']);
+        }
         
-        echo json_encode([
-            'success' => true,
-            'message' => 'Registration successful. Please login.',
-            'user_id' => $user_id
-        ]);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Registration failed. Please try again.']);
+        $stmt->close();
+    } catch (Exception $e) {
+        error_log("Register insert failed: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'An error occurred. Please try again.']);
     }
-    
-    $stmt->close();
     $conn->close();
 }
 
@@ -188,11 +231,17 @@ function logout() {
     $userId = getAuthUserId();
     
     if ($userId && $conn) {
-        // Clear API token if logging out via token (mobile app)
-        $tokenStmt = $conn->prepare("UPDATE users SET api_token = NULL WHERE user_id = ?");
-        $tokenStmt->bind_param("i", $userId);
-        $tokenStmt->execute();
-        $tokenStmt->close();
+        try {
+            // Clear API token if logging out via token (mobile app)
+            $tokenStmt = $conn->prepare("UPDATE users SET api_token = NULL WHERE user_id = ?");
+            if ($tokenStmt) {
+                $tokenStmt->bind_param("i", $userId);
+                $tokenStmt->execute();
+                $tokenStmt->close();
+            }
+        } catch (Exception $e) {
+            error_log("Logout token clear failed: " . $e->getMessage());
+        }
         
         logActivity($conn, $userId, 'logout', 'user', $userId, 'User logged out');
         $conn->close();
@@ -325,13 +374,7 @@ function sendOTP() {
     if ($emailSent) {
         echo json_encode(['success' => true, 'message' => 'OTP sent to your email']);
     } else {
-        // For development/testing, still allow the process to continue
-        // In production, you'd want proper email configuration
-        echo json_encode([
-            'success' => true, 
-            'message' => 'OTP generated. Check your email.',
-            'debug_otp' => $otp // Remove this in production!
-        ]);
+        echo json_encode(['success' => false, 'message' => 'Failed to send OTP email. Please check that SMTP credentials are configured, or contact the administrator.']);
     }
     
     $conn->close();
@@ -526,44 +569,56 @@ function resetPassword() {
 }
 
 function sendOTPEmail($email, $name, $otp) {
-    $subject = "San Roque E-Library - Password Reset OTP";
-    
-    $message = "
-    <html>
-    <head>
-        <title>Password Reset OTP</title>
-    </head>
-    <body style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-        <div style='background-color: #4A90E2; color: white; padding: 20px; text-align: center;'>
-            <h1>San Roque Elementary School</h1>
-            <h2>E-Library System</h2>
-        </div>
-        <div style='padding: 20px; background-color: #f9f9f9;'>
-            <p>Hello <strong>{$name}</strong>,</p>
-            <p>You requested to reset your password. Use the OTP code below:</p>
-            <div style='background-color: #4A90E2; color: white; font-size: 32px; padding: 20px; text-align: center; letter-spacing: 10px; margin: 20px 0;'>
-                <strong>{$otp}</strong>
+    require_once __DIR__ . '/../lib/PHPMailer.php';
+    require_once __DIR__ . '/../lib/SMTP.php';
+    require_once __DIR__ . '/../lib/Exception.php';
+
+    try {
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host = SMTP_HOST;
+        $mail->SMTPAuth = true;
+        $mail->Username = SMTP_USER;
+        $mail->Password = SMTP_PASS;
+        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port = SMTP_PORT;
+        $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+        $mail->addAddress($email, $name);
+        $mail->isHTML(true);
+        $mail->Subject = "San Roque E-Library - Password Reset OTP";
+        $mail->Body = "
+        <html>
+        <head>
+            <title>Password Reset OTP</title>
+        </head>
+        <body style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #F5F5F5;'>
+            <div style='background-color: #228B22; color: white; padding: 25px; text-align: center;'>
+                <img src='https://sres-e-library.infinityfreeapp.com/assets/logos/school-logo.png' alt='School Logo' style='height: 80px; margin-bottom: 10px;'>
+                <h1 style='margin: 5px 0;'>San Roque Elementary School</h1>
+                <h2 style='margin: 0; font-weight: normal;'>E-Library System</h2>
             </div>
-            <p>This code will expire in <strong>15 minutes</strong>.</p>
-            <p>If you didn't request this, please ignore this email.</p>
-        </div>
-        <div style='background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;'>
-            <p>Department of Education - Division of San Pedro, Laguna</p>
-        </div>
-    </body>
-    </html>
-    ";
-    
-    // Email headers
-    $headers = "MIME-Version: 1.0\r\n";
-    $headers .= "Content-type: text/html; charset=UTF-8\r\n";
-    $headers .= "From: San Roque E-Library <noreply@sres.edu.ph>\r\n";
-    
-    // Try to send email
-    // Note: PHP mail() requires proper server configuration
-    // For production, use PHPMailer or a service like SendGrid
-    $sent = @mail($email, $subject, $message, $headers);
-    
-    return $sent;
+            <div style='padding: 25px; background-color: #FFFFFF;'>
+                <p>Hello <strong>{$name}</strong>,</p>
+                <p>You requested to reset your password. Use the OTP code below:</p>
+                <div style='background-color: #228B22; color: white; font-size: 36px; padding: 20px; text-align: center; letter-spacing: 12px; margin: 20px 0; border-radius: 8px;'>
+                    <strong>{$otp}</strong>
+                </div>
+                <p>This code will expire in <strong>15 minutes</strong>.</p>
+                <p>If you didn't request this, please ignore this email.</p>
+            </div>
+            <div style='background-color: #2C3E50; color: white; padding: 15px; text-align: center; font-size: 12px;'>
+                <p style='margin: 2px 0;'>Department of Education — Division of San Pedro, Laguna</p>
+                <p style='margin: 2px 0;'>San Roque Elementary School E-Library System</p>
+            </div>
+        </body>
+        </html>
+        ";
+        $mail->AltBody = "Hello {$name},\n\nYour password reset OTP is: {$otp}\n\nThis code will expire in 15 minutes.\n\nIf you didn't request this, please ignore this email.";
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log("OTP email send failed: " . $e->getMessage());
+        return false;
+    }
 }
 ?>

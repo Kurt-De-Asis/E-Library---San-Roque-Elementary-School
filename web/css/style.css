@@ -1682,34 +1682,43 @@ p {
     }
 
     .data-table {
-        overflow-x: auto;
+        overflow: auto;
         -webkit-overflow-scrolling: touch;
     }
 
     .data-table table {
-        min-width: 600px;
+        min-width: auto;
     }
 
     .data-table th,
     .data-table td {
-        padding: 0.75rem 0.5rem;
-        font-size: 0.85rem;
-        white-space: nowrap;
+        padding: 0.5rem 0.4rem;
+        font-size: 0.8rem;
     }
 
     .table-cover {
-        width: 40px;
-        height: 50px;
+        width: 36px;
+        height: 46px;
     }
 
     .actions {
-        flex-direction: column;
+        flex-direction: row;
         gap: 0.25rem;
     }
 
     .actions button {
-        padding: 0.4rem 0.8rem;
-        font-size: 0.8rem;
+        padding: 0.35rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    /* Hide low-value columns on tablet */
+    #usersTable th:nth-child(6),
+    #usersTable td:nth-child(6),
+    #sectionsTable th:nth-child(4),
+    #sectionsTable td:nth-child(4),
+    #categoriesTable th:nth-child(2),
+    #categoriesTable td:nth-child(2) {
+        display: none;
     }
 
     /* Settings form responsive */
@@ -1893,6 +1902,28 @@ p {
         width: 48px;
         height: 48px;
         font-size: 1.2rem;
+    }
+
+    /* Compact admin tables on small phones */
+    .data-table th,
+    .data-table td {
+        padding: 0.35rem 0.25rem;
+        font-size: 0.75rem;
+    }
+
+    .table-cover {
+        display: none;
+    }
+
+    /* Hide Author column on small phones */
+    #booksTable th:nth-child(3),
+    #booksTable td:nth-child(3) {
+        display: none;
+    }
+
+    .actions button {
+        padding: 0.25rem 0.4rem;
+        font-size: 0.7rem;
     }
 }
 
@@ -2657,28 +2688,79 @@ p {
     margin-right: 1rem;
 }
 
-/* Hide other elements in auto-fill mode */
+/* Exit Fullscreen Button */
+.exit-fullscreen-btn {
+    display: none;
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 10000;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    font-size: 1.2rem;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    backdrop-filter: blur(3px);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.3s ease;
+    flex: none;
+}
+
+/* CSS-only fullscreen mode */
+.reader-fullscreen-active .reader-content {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9998;
+    background: #1a1a2e;
+}
+
 .reader-fullscreen-active .reader-header,
 .reader-fullscreen-active .reader-toolbar,
 .reader-fullscreen-active .reading-progress {
     display: none !important;
 }
 
-/* Ensure arrows are visible and clickable */
 .reader-fullscreen-active .reader-navigation {
     display: flex !important;
-    z-index: 1000 !important;
+    z-index: 10001 !important;
 }
 
 .reader-content.auto-fill .pdf-viewer canvas {
     max-width: 100vw;
     max-height: 100vh;
-    width: auto !important;
-    height: auto !important;
-    object-fit: contain;
     margin: auto;
     display: block;
 }
+
+/* Show exit fullscreen button when in fullscreen */
+.reader-fullscreen-active .exit-fullscreen-btn {
+    display: flex !important;
+}
+
+.reader-fullscreen-active .reading-area {
+    padding: 0;
+}
+
+.reader-fullscreen-active .pdf-viewer {
+    min-height: 0;
+    border-radius: 0;
+    box-shadow: none;
+    height: 100%;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 
 /* Reader Responsive */
 @media (max-width: 768px) {
@@ -2828,6 +2910,40 @@ p {
     .settings-panel .setting-group input[type="text"] {
         font-size: 16px;
     }
+
+    /* Compact header buttons on mobile */
+    .reader-header .reader-controls .offline-text {
+        display: none;
+    }
+
+    .reader-header .header-left .btn i,
+    .reader-header .reader-controls .btn i {
+        margin-right: 0;
+    }
+
+    .reader-header .header-left .btn {
+        padding: 0.35rem 0.5rem;
+        font-size: 0.75rem;
+        min-height: 36px;
+        gap: 0.25rem;
+    }
+
+    .reader-header .reader-controls .btn {
+        padding: 0.35rem;
+        font-size: 0.8rem;
+        min-height: 36px;
+        min-width: 36px;
+        justify-content: center;
+        gap: 0;
+    }
+
+    .reader-header .reader-controls .btn-icon,
+    .reader-header .reader-controls #fullscreenBtn {
+        width: 36px;
+        height: 36px;
+        font-size: 0.85rem;
+        padding: 0;
+    }
 }
 
 @media (max-width: 480px) {
@@ -2903,11 +3019,29 @@ p {
     .nav-btn-right {
         margin-right: 0.15rem;
     }
+
+    .reader-header .header-left .btn {
+        padding: 0.3rem 0.4rem;
+        font-size: 0.7rem;
+        min-height: 32px;
+    }
+
+    .reader-header .reader-controls .btn {
+        padding: 0.25rem;
+        font-size: 0.75rem;
+        min-height: 32px;
+        min-width: 32px;
+    }
+
+    .reader-header .reader-controls .btn-icon,
+    .reader-header .reader-controls #fullscreenBtn {
+        width: 32px;
+        height: 32px;
+        font-size: 0.8rem;
+    }
 }
 
-    .reader-header .book-info {
-        text-align: center;
-    }
+
 
     .reader-header .book-info h2 {
         font-size: 1rem;
@@ -2990,109 +3124,6 @@ p {
         width: 50px;
         height: 50px;
         font-size: 1.2rem;
-    }
-
-    .fullscreen-nav-btn-left {
-        margin-left: 1rem;
-    }
-
-    .fullscreen-nav-btn-right {
-        margin-right: 1rem;
-    }
-}
-
-@media (max-width: 480px) {
-    .reader-header {
-        padding: 0.5rem 0;
-    }
-
-    .reader-header .header-container {
-        padding: 0 1rem;
-    }
-
-    .reader-toolbar {
-        padding: 0.5rem 0;
-    }
-
-    .reader-toolbar .toolbar-container {
-        padding: 0 0.5rem;
-    }
-
-    .reader-toolbar .page-info {
-        font-size: 0.8rem;
-    }
-
-    .reader-toolbar .page-info input {
-        width: 40px;
-        font-size: 0.8rem;
-    }
-
-    .reader-toolbar .zoom-controls select {
-        font-size: 0.8rem;
-        padding: 0.3rem 0.5rem;
-    }
-
-    .reader-toolbar .btn-icon {
-        width: 32px;
-        height: 32px;
-        font-size: 1rem;
-    }
-
-    .reading-area {
-        padding: 0.5rem 0.25rem;
-    }
-
-    .toc-sidebar,
-    .settings-panel,
-    .bookmarks-panel {
-        height: 60vh;
-        padding: 1rem 0.75rem;
-    }
-
-    .settings-panel h4,
-    .bookmarks-panel h4,
-    .toc-sidebar h3 {
-        font-size: 1rem;
-    }
-
-    .settings-panel .setting-group {
-        margin-bottom: 1rem;
-    }
-
-    .settings-panel .setting-group label {
-        font-size: 0.85rem;
-    }
-
-    .bookmarks-list .no-bookmarks {
-        padding: 1rem 0.5rem;
-    }
-
-    .bookmark-item {
-        padding: 0.75rem;
-    }
-
-    .bookmark-note {
-        font-size: 0.8rem;
-    }
-
-/* Small mobile fullscreen navigation */
-    .fullscreen-navigation {
-        padding: 0 0.5rem;
-    }
-
-    .fullscreen-nav-btn {
-        width: 45px;
-        height: 45px;
-        font-size: 1.1rem;
-    }
-
-    .fullscreen-nav-btn-left {
-        margin-left: 0.5rem;
-    }
-
-    .fullscreen-nav-btn-right {
-        margin-right: 0.5rem;
-    }
 }
 
 /* Upload Type Selection Styles */

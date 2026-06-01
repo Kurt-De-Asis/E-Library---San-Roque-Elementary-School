@@ -1,16 +1,18 @@
 <?php
 require_once 'config.php';
 
-$token = $_GET['token'] ?? '';
+if (function_exists('set_time_limit')) {
+    set_time_limit(0);
+}
+
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
-if (empty($token) || $id <= 0) {
+if ($id <= 0) {
     http_response_code(400);
     echo 'Invalid request';
     exit;
 }
 
-// Validate token
 $conn = getDBConnection();
 if (!$conn) {
     http_response_code(500);
@@ -18,21 +20,6 @@ if (!$conn) {
     exit;
 }
 
-$stmt = $conn->prepare("SELECT user_id FROM users WHERE api_token = ? AND is_active = 1");
-$stmt->bind_param("s", $token);
-$stmt->execute();
-$result = $stmt->get_result();
-
-if ($result->num_rows !== 1) {
-    http_response_code(401);
-    echo 'Unauthorized';
-    $stmt->close();
-    $conn->close();
-    exit;
-}
-$stmt->close();
-
-// Get book file path
 $stmt = $conn->prepare("SELECT title, file_path, content_type FROM ebooks WHERE ebook_id = ? AND is_active = 1");
 $stmt->bind_param("i", $id);
 $stmt->execute();
@@ -69,14 +56,63 @@ $content_types = [
 ];
 
 $content_type = $content_types[$ext] ?? 'application/octet-stream';
+$isDownload = isset($_GET['download']);
+$disposition = $isDownload ? 'attachment' : 'inline';
 
 while (ob_get_level()) ob_end_clean();
 
-header('Content-Type: ' . $content_type);
-header('Content-Length: ' . filesize($file_path));
-header('Content-Disposition: inline; filename="' . basename($book['file_path']) . '"');
-header('Cache-Control: private, max-age=3600');
-header('Accept-Ranges: bytes');
+$file_size = filesize($file_path);
+$range = $_SERVER['HTTP_RANGE'] ?? '';
 
-readfile($file_path);
+if ($range) {
+    preg_match('/bytes=(\d+)-(\d*)/', $range, $matches);
+    $start = intval($matches[1]);
+    $end = $matches[2] !== '' ? intval($matches[2]) : $file_size - 1;
+
+    header('HTTP/1.1 206 Partial Content');
+    header("Content-Range: bytes $start-$end/$file_size");
+    header('Content-Length: ' . ($end - $start + 1));
+    header('Content-Type: ' . $content_type);
+    header('Content-Disposition: ' . $disposition . '; filename="' . basename($book['file_path']) . '"');
+    header('Accept-Ranges: bytes');
+    header('Cache-Control: no-cache');
+    header('X-Accel-Buffering: no');
+
+    $fp = fopen($file_path, 'rb');
+    if (!$fp) {
+        http_response_code(500);
+        echo 'Could not open file';
+        exit;
+    }
+    fseek($fp, $start);
+    $pos = $start;
+    while (!feof($fp) && $pos <= $end && !connection_aborted()) {
+        $bytes = min(65536, $end - $pos + 1);
+        echo fread($fp, $bytes);
+        ob_flush();
+        flush();
+        $pos += $bytes;
+    }
+    fclose($fp);
+} else {
+    header('Content-Type: ' . $content_type);
+    header('Content-Length: ' . $file_size);
+    header('Content-Disposition: ' . $disposition . '; filename="' . basename($book['file_path']) . '"');
+    header('Accept-Ranges: bytes');
+    header('Cache-Control: no-cache');
+    header('X-Accel-Buffering: no');
+
+    $fp = fopen($file_path, 'rb');
+    if (!$fp) {
+        http_response_code(500);
+        echo 'Could not open file';
+        exit;
+    }
+    while (!feof($fp) && !connection_aborted()) {
+        echo fread($fp, 65536);
+        ob_flush();
+        flush();
+    }
+    fclose($fp);
+}
 exit;

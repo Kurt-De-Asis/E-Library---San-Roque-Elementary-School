@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#228B22">
+    <title>Offline - San Roque Elementary School E-Library</title>
+    <link rel="icon" type="image/png" href="assets/icons/icon-48x48.png">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            background: #f5f5f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .offline-header {
+            text-align: center;
+            padding: 2rem 1rem;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .offline-header h1 {
+            color: #228B22;
+            margin: 0.5rem 0;
+        }
+        .offline-header p {
+            color: #666;
+            margin: 0;
+        }
+        .offline-icon {
+            font-size: 3rem;
+        }
+        .books-section {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        .books-section h2 {
+            color: #333;
+            margin-bottom: 1rem;
+        }
+        .offline-books-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+        .offline-book-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        .offline-book-card .book-info {
+            padding: 1rem;
+            flex: 1;
+        }
+        .offline-book-card h3 {
+            margin: 0 0 0.25rem;
+            font-size: 1rem;
+            color: #333;
+        }
+        .offline-book-card .author {
+            color: #888;
+            font-size: 0.85rem;
+            margin: 0 0 1rem;
+        }
+        .offline-book-card .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: #228B22;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .offline-book-card .btn:hover {
+            background: #1a6b1a;
+        }
+        .no-books {
+            text-align: center;
+            padding: 3rem;
+            color: #888;
+        }
+        .no-books .btn {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.75rem 2rem;
+            background: #228B22;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .school-name {
+            text-align: center;
+            color: #888;
+            font-size: 0.85rem;
+            margin: 0;
+            padding: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-header">
+        <div class="offline-icon">&#x1F4F6;</div>
+        <h1>You're Offline</h1>
+        <p>Books you've saved for offline reading are still available below.</p>
+    </div>
+
+    <div class="books-section">
+        <h2>Saved Offline Books</h2>
+        <div id="offlineBooks" class="offline-books-grid"></div>
+    </div>
+
+    <p class="school-name">San Roque Elementary School E-Library</p>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var container = document.getElementById('offlineBooks');
+            if (!container) return;
+
+            var offlineBooks = {};
+            try {
+                offlineBooks = JSON.parse(localStorage.getItem('offlineBooks') || '{}');
+            } catch(e) {}
+
+            var keys = Object.keys(offlineBooks);
+
+            if (keys.length === 0) {
+                container.innerHTML = '<div class="no-books">' +
+                    '<p>No books saved for offline reading yet.</p>' +
+                    '<p>Go online, open a book, and click "Save Offline" to save it for offline access.</p>' +
+                    '<a href="../index.php" class="btn">Go to Library</a>' +
+                    '</div>';
+                return;
+            }
+
+            keys.forEach(function(key) {
+                var book = offlineBooks[key];
+                var card = document.createElement('div');
+                card.className = 'offline-book-card';
+                card.innerHTML =
+                    '<div class="book-info">' +
+                    '<h3>' + (book.title || 'Unknown') + '</h3>' +
+                    '<p class="author">By: ' + (book.author || 'Unknown') + '</p>' +
+                    '<a href="../reader.php?id=' + book.ebook_id + '" class="btn"><i class="fas fa-book-reader"></i> Read</a>' +
+                    '</div>';
+                container.appendChild(card);
+            });
+        });
+    </script>
+</body>
+</html>

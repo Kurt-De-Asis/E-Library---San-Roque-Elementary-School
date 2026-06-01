@@ -29,11 +29,17 @@ if (!isset($_SESSION['user_id'])) {
     </script>
     <meta name="theme-color" content="#228B22">
     <meta name="description" content="San Roque Elementary School E-Library - Digital reading platform for students">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="SRES E-Library">
     <title>San Roque Elementary School E-Library</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="shortcut icon" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
-    <link rel="apple-touch-icon" href="assets/logos/school-logo.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-icon" sizes="192x192" href="assets/icons/icon-192x192.png?v=<?php echo CACHE_BUSTER; ?>">
+    <link rel="apple-touch-startup-image" href="assets/icons/apple-touch-icon.png?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="css/style.css?v=<?php echo CACHE_BUSTER; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -211,13 +217,16 @@ if (!isset($_SESSION['user_id'])) {
                     .then(registration => {
                         console.log('Service Worker registered:', registration.scope);
                         
+                        if (registration.waiting && navigator.serviceWorker.controller) {
+                            registration.waiting.postMessage({ action: 'skipWaiting' });
+                            window.location.reload();
+                        }
+                        
                         registration.addEventListener('updatefound', () => {
                             const newWorker = registration.installing;
                             newWorker.addEventListener('statechange', () => {
                                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    if (confirm('New version available! Refresh to update?')) {
-                                        window.location.reload();
-                                    }
+                                    window.location.reload();
                                 }
                             });
                         });

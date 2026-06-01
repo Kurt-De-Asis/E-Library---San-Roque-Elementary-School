@@ -54,6 +54,9 @@ switch ($action) {
     case 'download_book':
         downloadBook($conn);
         break;
+    case 'log_download':
+        logDownload($conn);
+        break;
     case 'get_sections':
         getSections($conn);
         break;
@@ -516,26 +519,7 @@ function downloadBook($conn) {
                 return;
             }
 
-            // Build proper file path
-            $file_path = '../uploads/books/' . $book['file_path'];
-
-            // Get file extension for Content-Type
-            $ext = strtolower(pathinfo($book['file_path'], PATHINFO_EXTENSION));
-            $content_type = 'application/octet-stream';
-            if ($ext === 'pdf') {
-                $content_type = 'application/pdf';
-            } elseif ($ext === 'epub') {
-                $content_type = 'application/epub+zip';
-            } elseif (in_array($ext, ['ppt', 'pptx'])) {
-                $content_type = 'application/vnd.ms-powerpoint';
-            } elseif ($ext === 'mp4') {
-                $content_type = 'video/mp4';
-            } elseif ($ext === 'webm') {
-                $content_type = 'video/webm';
-            }
-
-            // Create download filename
-            $download_name = preg_replace('/[^a-zA-Z0-9\-\_\.]/', '_', $book['title']) . '.' . $ext;
+            $file_path = __DIR__ . '/../uploads/books/' . $book['file_path'];
 
             if (file_exists($file_path)) {
                 // Log download activity
@@ -544,23 +528,9 @@ function downloadBook($conn) {
                     logActivity($conn, $logUserId, 'download', 'ebook', $ebook_id, "Downloaded: {$book['title']}");
                 }
 
-                // Clear any output buffers
-                while (ob_get_level()) {
-                    ob_end_clean();
-                }
-
-                // Set headers for download
-                header('Content-Description: File Transfer');
-                header('Content-Type: ' . $content_type);
-                header('Content-Disposition: attachment; filename="' . $download_name . '"');
-                header('Content-Transfer-Encoding: binary');
-                header('Expires: 0');
-                header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-                header('Pragma: public');
-                header('Content-Length: ' . filesize($file_path));
-
-                // Read and output file
-                readfile($file_path);
+                // Redirect to serve.php for chunked streaming (bypasses readfile timeout)
+                while (ob_get_level()) ob_end_clean();
+                header('Location: serve.php?id=' . $ebook_id . '&download=1');
                 exit;
             } else {
                 echo json_encode(['success' => false, 'message' => 'File not found: ' . $book['file_path']]);
@@ -572,6 +542,45 @@ function downloadBook($conn) {
         $stmt->close();
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Error downloading book']);
+        error_log($e->getMessage());
+    }
+}
+
+function logDownload($conn) {
+    $ebook_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+    if ($ebook_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid book ID']);
+        return;
+    }
+
+    try {
+        $stmt = $conn->prepare("SELECT title, content_type FROM ebooks WHERE ebook_id = ? AND is_active = 1");
+        $stmt->bind_param("i", $ebook_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows === 1) {
+            $book = $result->fetch_assoc();
+
+            if ($book['content_type'] === 'book') {
+                echo json_encode(['success' => false, 'message' => 'Download not allowed']);
+                return;
+            }
+
+            $logUserId = getAuthUserId();
+            if ($logUserId) {
+                logActivity($conn, $logUserId, 'download', 'ebook', $ebook_id, "Downloaded: {$book['title']}");
+            }
+
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Book not found']);
+        }
+
+        $stmt->close();
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Error logging download']);
         error_log($e->getMessage());
     }
 }
@@ -747,7 +756,7 @@ function getGradeLevelFilter() {
         $section_id = $_SESSION['section_id'] ?? null;
     } else {
         // Check Bearer token (mobile app)
-        $headers = getallheaders();
+        $headers = get_request_headers();
         $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
         if (preg_match('/Bearer\s+(.+)$/i', $authHeader, $matches)) {
             $conn = getDBConnection();
